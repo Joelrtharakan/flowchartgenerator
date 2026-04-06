@@ -252,6 +252,47 @@ def clean_mermaid(raw: str) -> str:
     return normalize_mermaid(raw)
 
 
+def repair_mermaid(raw: str) -> str:
+    mermaid = clean_mermaid(raw)
+    lines = []
+
+    for raw_line in mermaid.splitlines():
+        line = raw_line.strip()
+        if "-->" not in line:
+            lines.append(line)
+            continue
+
+        # normalize whitespace and arrow formatting first
+        line = normalize_mermaid(line)
+
+        # repair invalid node syntax [/text/] to [text]
+        line = re.sub(r"\[/([^/]+?)/\]", r"[\1]", line)
+        line = re.sub(r"/([^/]+?)/", r"[\1]", line)
+
+        # normalize valid Yes/No labels to exact spacing
+        line = re.sub(r"\s*-->\s*\|\s*(Yes|No)\s*\|", r" -->|\1|", line)
+
+        # remove invalid arrow labels that are not Yes/No
+        def replace_label(match: re.Match) -> str:
+            label = match.group(1).strip()
+            if label in {"Yes", "No"}:
+                return f"|{label}|"
+            return ""
+
+        line = re.sub(r"\s*\|\s*(.*?)\s*\|", replace_label, line)
+        line = re.sub(r" -->\s*\|", " -->|", line)
+
+        # if label removal left consecutive arrows, clean them back up
+        line = re.sub(r"-->\|\|", "-->", line)
+        line = re.sub(r"\|\|", "", line)
+        line = re.sub(r"(?<!\|)\s*-->\s*(?!\|)", " --> ", line)
+        line = re.sub(r" {2,}", " ", line).strip()
+
+        lines.append(line)
+
+    return "\n".join(lines).strip()
+
+
 def build_prompt_pool() -> List[str]:
     return [template.format(s=scenario) for scenario in SCENARIOS for template in TEMPLATES]
 
@@ -495,7 +536,7 @@ def clean_dataset_file(path: Path, overwrite: bool = False) -> None:
         item = normalize_entry(entry)
         prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else find_prompt_in_messages(item.get("messages", []))
         mermaid = item.get("mermaid") if isinstance(item.get("mermaid"), str) else find_mermaid_in_messages(item.get("messages", []))
-        mermaid = clean_mermaid(mermaid)
+        mermaid = repair_mermaid(mermaid)
         item["prompt"] = prompt
         item["mermaid"] = mermaid
         item["messages"] = build_messages(prompt, mermaid)
