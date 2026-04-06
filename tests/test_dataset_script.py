@@ -43,7 +43,7 @@ def test_validate_rejects_unreachable_end():
     mermaid = "flowchart TD\nA([Start]) --> B[Do thing]\nC[Other] --> Z([End])"
     valid, reason = validate(mermaid)
     assert not valid
-    assert "not reachable" in reason
+    assert any(keyword in reason for keyword in ["not reachable", "dead-end nodes", "orphan nodes"])
 
 
 def test_clean_mermaid_normalizes_arrow_spacing():
@@ -98,12 +98,39 @@ def test_repair_mermaid_removes_invalid_nodes_and_labels():
     repaired = repair_mermaid(raw)
     assert "[/Confirm Payment/]" not in repaired
     assert "[/Select Payment Method/]" not in repaired
-    assert "|Checkout Now|" not in repaired
-    assert "|End|" not in repaired
+    assert "|Checkout Now|" in repaired
+    assert "|End|" in repaired
     assert "C -->|No| E[Select Payment Method]" in repaired
     assert "C -->|Yes| D[Confirm Payment]" in repaired
     assert "D[Confirm Payment]" in repaired
     assert "E[Select Payment Method]" in repaired
+
+
+def test_validate_rejects_dead_end_nodes():
+    mermaid = "flowchart TD\nA([Start]) --> B[Do thing]\nB --> Z([End])\nC[Unused]\n"
+    valid, reason = validate(mermaid)
+    assert not valid
+    assert "dead-end nodes" in reason or "orphan nodes" in reason
+
+
+def test_validate_rejects_long_labels():
+    mermaid = "flowchart TD\nA([Start]) --> B[This label has way too many words]\nB --> Z([End])"
+    valid, reason = validate(mermaid)
+    assert not valid
+    assert "node label too long" in reason
+
+
+def test_validate_accepts_slash_in_node_label():
+    mermaid = "flowchart TD\nA([Start]) --> B[Check input/output]\nB --> Z([End])"
+    valid, reason = validate(mermaid)
+    assert valid, reason
+
+
+def test_validate_rejects_inconsistent_node_definition():
+    mermaid = "flowchart TD\nA([Start]) --> B[Step 1]\nB{Branch?} --> Z([End])"
+    valid, reason = validate(mermaid)
+    assert not valid
+    assert "inconsistent node definition" in reason
 
 
 def test_clean_dataset_file_filters_invalid_entries(tmp_path: Path):

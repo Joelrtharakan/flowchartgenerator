@@ -121,13 +121,17 @@ TEMPLATES = [
 
 LOG_FILE_NAME = "dataset.log"
 CHECKPOINT_FILE_NAME = "checkpoint_raw.jsonl"
+# Precompiled regex patterns for performance
 ARROW_PATTERN = re.compile(
     r"^(?P<src>[A-Za-z0-9_]+)(?:\s*\[[^\]]*\]|\s*\([^\)]*\)|\s*\{[^\}]*\}|\s*/[^/]*/)?\s*-->\s*(?:\|[^|]*\|\s*)?(?P<dst>[A-Za-z0-9_]+)(?:\s*\[[^\]]*\]|\s*\([^\)]*\)|\s*\{[^\}]*\}|\s*/[^/]*/)?$"
 )
 NODE_ID_PATTERN = re.compile(r"(?P<id>[A-Za-z0-9_]+)(?=\s*(?:\[|\(|\{|/|$))")
+BRACKET_SLASH_PATTERN = re.compile(r"\[/([^/]+?)/\]")
+SLASH_PATTERN = re.compile(r"/([^/]+?)/")
+VALID_LABEL_PATTERN = re.compile(r"\s*\|\s*(.*?)\s*\|")
+ARROW_LABEL_PATTERN = re.compile(r"\s*-->\s*\|\s*(Yes|No)\s*\|")
 
 logger = logging.getLogger(__name__)
-_shutdown_requested = False
 
 
 def parse_args() -> argparse.Namespace:
@@ -226,18 +230,66 @@ def call_ollama(
 
 
 def normalize_mermaid(mermaid: str) -> str:
+    """Normalize Mermaid code whitespace and arrow formatting."""
     lines = []
     for raw_line in mermaid.splitlines():
         line = raw_line.rstrip()
         if "-->" in line:
+            # Normalize arrow spacing: src --> dst
             line = re.sub(r"\s*-->\s*", " --> ", line)
+            # Fix arrow-to-label connection: --> | -> -->|
             line = re.sub(r"-->\s*\|", "-->|", line)
+            # Normalize label spacing: |label| -> |label|
             line = re.sub(r"\|\s*(.*?)\s*\|", r"|\1|", line)
+            # Remove multiple spaces
             line = re.sub(r" {2,}", " ", line)
         else:
             line = line.strip()
         lines.append(line)
     return "\n".join(lines).strip()
+
+
+NODE_REF_PATTERN = re.compile(
+    r"^(?P<id>[A-Za-z0-9_]+)(?P<node>\s*(?:\([^)]+\)|\[[^\]]+\]|\{[^}]+\}|/[^/]+/))?$"
+)
+
+
+def parse_node_reference(token: str) -> Tuple[str, str, str]:
+    token = token.strip()
+    match = NODE_REF_PATTERN.match(token)
+    if not match:
+        raise ValueError(f"invalid node reference: {token}")
+
+    node_id = match.group("id")
+    node_text = match.group("node")
+    if not node_text:
+        return node_id, "", ""
+
+    node_text = node_text.strip()
+    if node_text.startswith("(") and node_text.endswith(")"):
+        inner = node_text[1:-1]
+        if inner.startswith("[") and inner.endswith("]"):
+            label = inner[1:-1].strip()
+            return node_id, "round", label
+        raise ValueError(f"invalid round node syntax: {token}")
+    if node_text.startswith("[") and node_text.endswith("]"):
+        label = node_text[1:-1].strip()
+        if label.startswith("/") and label.endswith("/"):
+            raise ValueError("slash node syntax is not allowed")
+        return node_id, "box", label
+    if node_text.startswith("{") and node_text.endswith("}"):
+        label = node_text[1:-1].strip()
+        if label.startswith("/") and label.endswith("/"):
+            raise ValueError("slash node syntax is not allowed")
+        return node_id, "decision", label
+    if node_text.startswith("/") and node_text.endswith("/"):
+        raise ValueError("slash node syntax is not allowed")
+
+    raise ValueError(f"invalid node syntax: {token}")
+
+
+def node_label_is_valid(label: str) -> bool:
+    return len(label.split()) <= 6
 
 
 def clean_mermaid(raw: str) -> str:
@@ -252,7 +304,20 @@ def clean_mermaid(raw: str) -> str:
     return normalize_mermaid(raw)
 
 
+def _replace_arrow_label(match: re.Match) -> str:
+    """Helper to replace arrow labels, keeping only Yes/No."""
+    label = match.group(1).strip()
+    return f"|{label}|" if label in {"Yes", "No"} else match.group(0)
+
+
 def repair_mermaid(raw: str) -> str:
+    """Repair common Mermaid syntax errors and normalize formatting.
+    
+    Fixes:
+    - Invalid node syntax [/text/] → [text]
+    - Whitespace and spacing issues
+    - Arrow formatting
+    """
     mermaid = clean_mermaid(raw)
     lines = []
 
@@ -262,29 +327,15 @@ def repair_mermaid(raw: str) -> str:
             lines.append(line)
             continue
 
-        # normalize whitespace and arrow formatting first
-        line = normalize_mermaid(line)
+        # Fix invalid node syntax: [/text/] -> [text] and /text/ -> [text]
+        line = BRACKET_SLASH_PATTERN.sub(r"[\1]", line)
+        line = SLASH_PATTERN.sub(r"[\1]", line)
 
-        # repair invalid node syntax [/text/] to [text]
-        line = re.sub(r"\[/([^/]+?)/\]", r"[\1]", line)
-        line = re.sub(r"/([^/]+?)/", r"[\1]", line)
-
-        # normalize valid Yes/No labels to exact spacing
-        line = re.sub(r"\s*-->\s*\|\s*(Yes|No)\s*\|", r" -->|\1|", line)
-
-        # remove invalid arrow labels that are not Yes/No
-        def replace_label(match: re.Match) -> str:
-            label = match.group(1).strip()
-            if label in {"Yes", "No"}:
-                return f"|{label}|"
-            return ""
-
-        line = re.sub(r"\s*\|\s*(.*?)\s*\|", replace_label, line)
+        # Normalize valid Yes/No labels
+        line = ARROW_LABEL_PATTERN.sub(r" -->|\1|", line)
         line = re.sub(r" -->\s*\|", " -->|", line)
 
-        # if label removal left consecutive arrows, clean them back up
-        line = re.sub(r"-->\|\|", "-->", line)
-        line = re.sub(r"\|\|", "", line)
+        # Normalize arrow spacing (but preserve pipes around labels)
         line = re.sub(r"(?<!\|)\s*-->\s*(?!\|)", " --> ", line)
         line = re.sub(r" {2,}", " ", line).strip()
 
@@ -311,6 +362,7 @@ def prompt_generator(prompt_pool: List[str], allow_reuse: bool) -> Iterator[str]
 
 
 def build_messages(prompt: str, mermaid: str) -> List[Dict[str, str]]:
+    """Build standardized message structure for training data."""
     return [
         {"role": "system", "content": "You generate Mermaid flowcharts. Return ONLY valid Mermaid code. No explanation."},
         {"role": "user", "content": prompt},
@@ -356,8 +408,10 @@ def extract_node_ids(line: str) -> Set[str]:
 
 def validate(mermaid: str) -> Tuple[bool, str]:
     mermaid = mermaid.strip()
-    if "flowchart TD" not in mermaid:
-        return False, "missing 'flowchart TD' declaration"
+    if not mermaid:
+        return False, "empty Mermaid content"
+    if not mermaid.startswith("flowchart TD"):
+        return False, "missing or invalid 'flowchart TD' declaration"
     if "A([Start])" not in mermaid:
         return False, "missing A([Start]) node"
     if "Z([End])" not in mermaid:
@@ -368,11 +422,12 @@ def validate(mermaid: str) -> Tuple[bool, str]:
     lines = [line.strip() for line in mermaid.splitlines() if line.strip()]
     if len(lines) < 3:
         return False, f"too few lines ({len(lines)})"
-    if not lines[0].startswith("flowchart TD"):
-        return False, "first nonempty line must start with 'flowchart TD'"
+    if lines[0] != "flowchart TD":
+        return False, "first nonempty line must be exactly 'flowchart TD'"
 
     graph: Dict[str, Set[str]] = {}
     defined_nodes: Set[str] = set()
+    node_defs: Dict[str, Tuple[str, str]] = {}
 
     for line in lines[1:]:
         if line.count("[") != line.count("]"):
@@ -381,31 +436,78 @@ def validate(mermaid: str) -> Tuple[bool, str]:
             return False, "unbalanced braces"
         if len(line) > 200:
             return False, "line exceeds 200 characters"
-        if "/" in line:
-            return False, "node syntax /.../ is not allowed"
 
         if "-->" in line:
-            match = ARROW_PATTERN.match(line)
-            if not match:
+            if not ARROW_PATTERN.match(line):
                 return False, f"invalid arrow syntax: {line}"
-            src, dst = match.group("src"), match.group("dst")
-            graph.setdefault(src, set()).add(dst)
-            defined_nodes.update({src, dst})
 
-            if "|" in line:
-                labels = re.findall(r"\|(.*?)\|", line)
-                if not labels:
-                    return False, f"invalid arrow label syntax: {line}"
-                for label in labels:
-                    if label not in {"Yes", "No"}:
-                        return False, f"invalid arrow label '{label}'"
+            left, right = line.split("-->", 1)
+            right = right.strip()
+            arrow_label = None
+            label_match = re.search(r"\|([^|]+)\|", right)
+            if label_match:
+                arrow_label = label_match.group(1).strip()
+                if arrow_label not in {"Yes", "No"}:
+                    return False, f"invalid arrow label '{arrow_label}'"
+                if not node_label_is_valid(arrow_label):
+                    return False, f"arrow label too long: '{arrow_label}'"
+                right = (right[:label_match.start()] + right[label_match.end():]).strip()
+
+            try:
+                src_id, src_shape, src_label = parse_node_reference(left)
+                dst_id, dst_shape, dst_label = parse_node_reference(right)
+            except ValueError as exc:
+                return False, str(exc)
+
+            defined_nodes.update({src_id, dst_id})
+            if src_shape or src_label:
+                if src_id in node_defs and node_defs[src_id] != (src_shape, src_label):
+                    return False, f"inconsistent node definition for {src_id}"
+                node_defs[src_id] = (src_shape, src_label)
+            if dst_shape or dst_label:
+                if dst_id in node_defs and node_defs[dst_id] != (dst_shape, dst_label):
+                    return False, f"inconsistent node definition for {dst_id}"
+                node_defs[dst_id] = (dst_shape, dst_label)
+
+            graph.setdefault(src_id, set()).add(dst_id)
         else:
-            defined_nodes.update(extract_node_ids(line))
+            try:
+                node_id, node_shape, node_label = parse_node_reference(line)
+            except ValueError as exc:
+                return False, str(exc)
+            if not node_shape:
+                return False, f"incomplete node definition: {line}"
+            defined_nodes.add(node_id)
+            if node_id in node_defs and node_defs[node_id] != (node_shape, node_label):
+                return False, f"inconsistent node definition for {node_id}"
+            node_defs[node_id] = (node_shape, node_label)
 
     if "A" not in defined_nodes or "Z" not in defined_nodes:
         return False, "required node IDs A and Z are missing"
 
-    reachable = set()
+    if "A" in node_defs and node_defs["A"] != ("round", "Start"):
+        return False, "A([Start]) must be defined as the start node"
+    if "Z" in node_defs and node_defs["Z"] != ("round", "End"):
+        return False, "Z([End]) must be defined as the end node"
+
+    terminal_nodes = {node for node in defined_nodes if not graph.get(node)}
+    invalid_terminals = terminal_nodes - {"Z"}
+    if invalid_terminals:
+        return False, f"dead-end nodes: {sorted(invalid_terminals)}"
+    if "Z" in graph and graph["Z"]:
+        return False, "Z([End]) must not have outgoing edges"
+
+    for node_id, (shape, label) in node_defs.items():
+        if label and not node_label_is_valid(label):
+            return False, f"node label too long: '{label}'"
+        if node_id == "A" and (shape != "round" or label != "Start"):
+            return False, "A([Start]) must be the start node"
+        if node_id == "Z" and (shape != "round" or label != "End"):
+            return False, "Z([End]) must be the end node"
+        if shape == "decision" and not label.endswith("?"):
+            return False, f"decision node {node_id} should end with a question mark"
+
+    reachable: Set[str] = set()
     queue = ["A"]
     while queue:
         current = queue.pop(0)
@@ -420,26 +522,33 @@ def validate(mermaid: str) -> Tuple[bool, str]:
         return False, "Z([End]) is not reachable from A([Start])"
 
     orphan_nodes = defined_nodes - reachable
-    if orphan_nodes - {"A", "Z"}:
+    if orphan_nodes:
         return False, f"orphan nodes not reachable: {sorted(orphan_nodes)}"
 
     return True, ""
 
 
 def save_splits(results: List[Dict[str, str]], output_dir: Path) -> None:
+    """Split results into train/val/test sets and save as JSONL files.
+    
+    Uses configured ratios (90% train, 5% val, 5% test) to stratify data.
+    """
     random.shuffle(results)
     n = len(results)
+    train_count = int(n * DEFAULT_CONFIG["train_ratio"])
+    val_count = int(n * DEFAULT_CONFIG["val_ratio"])
+    
     splits = {
-        "train": results[: int(n * DEFAULT_CONFIG["train_ratio"])],
-        "val": results[int(n * DEFAULT_CONFIG["train_ratio"]) : int(n * (DEFAULT_CONFIG["train_ratio"] + DEFAULT_CONFIG["val_ratio"]))],
-        "test": results[int(n * (DEFAULT_CONFIG["train_ratio"] + DEFAULT_CONFIG["val_ratio"])) :],
+        "train": results[:train_count],
+        "val": results[train_count : train_count + val_count],
+        "test": results[train_count + val_count :],
     }
+    
     for split_name, data in splits.items():
         path = output_dir / f"data_{split_name}.jsonl"
         with path.open("w", encoding="utf-8") as handle:
             for item in data:
-                prompt = item.get("prompt") or find_prompt_in_messages(item.get("messages", []))
-                mermaid = item.get("mermaid") or find_mermaid_in_messages(item.get("messages", []))
+                prompt, mermaid = extract_prompt_mermaid(item)
                 mermaid = clean_mermaid(mermaid)
                 messages = build_messages(prompt, mermaid)
                 handle.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
@@ -447,6 +556,7 @@ def save_splits(results: List[Dict[str, str]], output_dir: Path) -> None:
 
 
 def find_prompt_in_messages(messages: List[Dict[str, str]]) -> str:
+    """Extract user prompt from messages list."""
     if not messages:
         return ""
     for msg in messages:
@@ -456,12 +566,20 @@ def find_prompt_in_messages(messages: List[Dict[str, str]]) -> str:
 
 
 def find_mermaid_in_messages(messages: List[Dict[str, str]]) -> str:
+    """Extract assistant Mermaid output from messages list (latest)."""
     if not messages:
         return ""
     for msg in reversed(messages):
         if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
             return msg["content"]
     return ""
+
+
+def extract_prompt_mermaid(item: Dict[str, object]) -> Tuple[str, str]:
+    """Extract prompt and Mermaid from item, checking both direct fields and messages."""
+    prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else find_prompt_in_messages(item.get("messages", []))
+    mermaid = item.get("mermaid") if isinstance(item.get("mermaid"), str) else find_mermaid_in_messages(item.get("messages", []))
+    return prompt, mermaid
 
 
 def is_valid_message_list(messages: object) -> bool:
@@ -478,8 +596,8 @@ def is_valid_message_list(messages: object) -> bool:
 
 
 def validate_dataset_item(item: Dict[str, object]) -> Tuple[bool, str]:
-    prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else find_prompt_in_messages(item.get("messages", []))
-    mermaid = item.get("mermaid") if isinstance(item.get("mermaid"), str) else find_mermaid_in_messages(item.get("messages", []))
+    """Validate a complete dataset item (prompt + Mermaid + messages)."""
+    prompt, mermaid = extract_prompt_mermaid(item)
     if not prompt:
         return False, "missing prompt"
     if not mermaid:
@@ -529,13 +647,17 @@ def validate_dataset_file(path: Path) -> None:
 
 
 def clean_dataset_file(path: Path, overwrite: bool = False) -> None:
+    """Clean and repair dataset entries, removing invalid items.
+    
+    Applies repair_mermaid to fix common format issues before validation.
+    Saves to .cleaned.jsonl unless overwrite=True.
+    """
     entries = load_jsonl(path)
     cleaned: List[Dict[str, object]] = []
     invalid_count = 0
     for entry in entries:
         item = normalize_entry(entry)
-        prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else find_prompt_in_messages(item.get("messages", []))
-        mermaid = item.get("mermaid") if isinstance(item.get("mermaid"), str) else find_mermaid_in_messages(item.get("messages", []))
+        prompt, mermaid = extract_prompt_mermaid(item)
         mermaid = repair_mermaid(mermaid)
         item["prompt"] = prompt
         item["mermaid"] = mermaid
@@ -591,11 +713,13 @@ def main() -> None:
     seen_mermaid = {item["mermaid"] for item in results}
     seen_prompts: Set[str] = set()
     generator = prompt_generator(prompt_pool, allow_reuse)
+    _shutdown_requested = False
 
     def _signal_handler(signum, frame):
-        global _shutdown_requested
-        _shutdown_requested = True
+        """Handle SIGINT/SIGTERM by saving checkpoint and exiting gracefully."""
+        nonlocal _shutdown_requested
         logger.info("Shutdown requested - saving checkpoint before exit...")
+        _shutdown_requested = True
         save_checkpoint(results, output_dir)
         logger.info("Checkpoint saved. Exiting cleanly.")
         sys.exit(0)
@@ -609,7 +733,7 @@ def main() -> None:
 
     while len(results) < args.target and not _shutdown_requested:
         prompt = next(generator)
-        if prompt in seen_prompts:
+        if prompt in seen_prompts and not allow_reuse:
             continue
 
         attempts += 1
