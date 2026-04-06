@@ -43,10 +43,13 @@ Strict rules you always follow:
 5. Decision points use diamonds: C{Is condition true?}
 6. YES path labeled: -->|Yes|
 7. NO path labeled: -->|No|
-8. Input/Output steps: D[/Read input/]
-9. Keep all labels under 6 words
-10. Every path must reach Z([End]) — no dead ends
-11. Use subgraph only if the prompt describes clear phases"""
+8. Do NOT use D[/.../] or E[/.../] node syntax
+9. Do NOT add text labels such as "End" to arrows
+10. Keep all labels under 6 words
+11. Use consistent arrow spacing: C -->|Yes| D
+12. Every path must reach Z([End]) — no dead ends
+13. Do not use extra trailing spaces on any line
+14. Keep node style consistent across the entire flowchart"""
 
 SCENARIOS = [
     # Auth & accounts
@@ -218,16 +221,31 @@ def call_ollama(
     return ""
 
 
+def normalize_mermaid(mermaid: str) -> str:
+    lines = []
+    for raw_line in mermaid.splitlines():
+        line = raw_line.rstrip()
+        if "-->" in line:
+            line = re.sub(r"\s*-->\s*", " --> ", line)
+            line = re.sub(r"-->\s*\|", "-->|", line)
+            line = re.sub(r"\|\s*(.*?)\s*\|", r"|\1|", line)
+            line = re.sub(r" {2,}", " ", line)
+        else:
+            line = line.strip()
+        lines.append(line)
+    return "\n".join(lines).strip()
+
+
 def clean_mermaid(raw: str) -> str:
     if "```" in raw:
         parts = raw.split("```")
         for part in parts:
             segment = part.strip()
             if segment.startswith("mermaid"):
-                return segment[len("mermaid") :].strip()
+                return normalize_mermaid(segment[len("mermaid") :].strip())
             if "flowchart" in segment:
-                return segment.strip()
-    return raw.strip()
+                return normalize_mermaid(segment.strip())
+    return normalize_mermaid(raw)
 
 
 def build_prompt_pool() -> List[str]:
@@ -318,6 +336,8 @@ def validate(mermaid: str) -> Tuple[bool, str]:
             return False, "unbalanced braces"
         if len(line) > 200:
             return False, "line exceeds 200 characters"
+        if "/" in line:
+            return False, "node syntax /.../ is not allowed"
 
         if "-->" in line:
             match = ARROW_PATTERN.match(line)
@@ -326,6 +346,14 @@ def validate(mermaid: str) -> Tuple[bool, str]:
             src, dst = match.group("src"), match.group("dst")
             graph.setdefault(src, set()).add(dst)
             defined_nodes.update({src, dst})
+
+            if "|" in line:
+                labels = re.findall(r"\|(.*?)\|", line)
+                if not labels:
+                    return False, f"invalid arrow label syntax: {line}"
+                for label in labels:
+                    if label not in {"Yes", "No"}:
+                        return False, f"invalid arrow label '{label}'"
         else:
             defined_nodes.update(extract_node_ids(line))
 

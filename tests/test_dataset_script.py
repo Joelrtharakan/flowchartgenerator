@@ -35,6 +35,25 @@ def test_validate_rejects_unreachable_end():
     assert "not reachable" in reason
 
 
+def test_clean_mermaid_normalizes_arrow_spacing():
+    raw = "flowchart TD  \nA([Start])--> |Yes| B[Done]  "
+    assert clean_mermaid(raw) == "flowchart TD\nA([Start]) -->|Yes| B[Done]"
+
+
+def test_validate_rejects_io_node_syntax():
+    mermaid = "flowchart TD\nA([Start]) --> B[/Upload/]\nB --> Z([End])"
+    valid, reason = validate(mermaid)
+    assert not valid
+    assert "not allowed" in reason
+
+
+def test_validate_rejects_end_label_on_arrow():
+    mermaid = "flowchart TD\nA([Start]) --> B[Do thing]\nB -->|End| Z([End])"
+    valid, reason = validate(mermaid)
+    assert not valid
+    assert "invalid arrow label" in reason
+
+
 def test_prompt_generator_reuses_when_requested():
     pool = ["foo", "bar"]
     generator = prompt_generator(pool, allow_reuse=True)
