@@ -253,12 +253,34 @@ def clean_mermaid(raw: str) -> str:
 
 
 def enforce_inline_format(code: str) -> str:
+    import re
     lines = code.split("\n")
-
-    filtered = []
+    
+    node_defs = {}
+    node_pattern = re.compile(r"([A-Za-z0-9_]+)(\[.*?\]|\(\[.*?\]\)|\(.*?\)|\{.*?\})")
+    
     for line in lines:
+        for match in node_pattern.finditer(line):
+            node_defs[match.group(1)] = match.group(2)
+            
+    filtered = []
+    used_nodes = set()
+    
+    for line in lines:
+        if line.startswith("flowchart"):
+            continue
+            
         if "-->" in line:
-            filtered.append(line.strip())
+            def replacer(match):
+                node_id = match.group(1)
+                
+                if node_id in node_defs and node_id not in used_nodes:
+                    used_nodes.add(node_id)
+                    return f"{node_id}{node_defs[node_id]}"
+                return node_id
+            
+            new_line = re.sub(r"([A-Za-z0-9_]+)(\[.*?\]|\(\[.*?\]\)|\(.*?\)|\{.*?\})?", replacer, line)
+            filtered.append(new_line)
 
     if lines and lines[0].startswith("flowchart"):
         return lines[0].strip() + "\n" + "\n".join(filtered)
