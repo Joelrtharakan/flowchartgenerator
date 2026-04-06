@@ -1,8 +1,18 @@
+import json
 from pathlib import Path
 
 import pytest
 
-from dataset_script import SCENARIOS, TEMPLATES, build_prompt_pool, clean_mermaid, prompt_generator, validate
+from dataset_script import (
+    SCENARIOS,
+    TEMPLATES,
+    build_prompt_pool,
+    clean_dataset_file,
+    clean_mermaid,
+    prompt_generator,
+    validate,
+    validate_dataset_item,
+)
 
 
 def test_clean_mermaid_strips_markdown_fence():
@@ -67,3 +77,39 @@ def test_build_prompt_pool_contains_templates():
     pool = build_prompt_pool()
     assert len(pool) == len(SCENARIOS) * len(TEMPLATES)
     assert any("Create a flowchart for:" in prompt for prompt in pool)
+
+
+def test_validate_dataset_item_rejects_bad_mermaid():
+    item = {
+        "messages": [
+            {"role": "system", "content": "You generate Mermaid flowcharts."},
+            {"role": "user", "content": "Create a flowchart for: product added to cart and checkout"},
+            {"role": "assistant", "content": "flowchart TD  \nA([Start]) -->|Add Product| B[Product Added]  \nC-->|Yes| D[/Confirm Payment/]\nD -->|End| Z([End])"},
+        ]
+    }
+    valid, reason = validate_dataset_item(item)
+    assert not valid
+    assert reason
+
+
+def test_clean_dataset_file_filters_invalid_entries(tmp_path: Path):
+    source = tmp_path / "data_test.jsonl"
+    source.write_text(
+        json.dumps({"messages": [
+            {"role": "system", "content": "You generate Mermaid flowcharts."},
+            {"role": "user", "content": "Create a flowchart for: product added to cart and checkout"},
+            {"role": "assistant", "content": "flowchart TD\nA([Start]) --> B[Add Product]\nB --> Z([End])"},
+        ]}
+        ) + "\n" + json.dumps({"messages": [
+            {"role": "system", "content": "You generate Mermaid flowcharts."},
+            {"role": "user", "content": "Create a flowchart for: invalid sample"},
+            {"role": "assistant", "content": "flowchart TD\nA([Start]) --> B[/Bad/]\nB --> Z([End])"},
+        ]}
+        ) + "\n",
+        encoding="utf-8",
+    )
+    clean_dataset_file(source, overwrite=False)
+    cleaned = tmp_path / "data_test.jsonl.cleaned.jsonl"
+    assert cleaned.exists()
+    lines = cleaned.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 1

@@ -150,6 +150,10 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Allow reusing prompts after the prompt pool is exhausted.",
     )
+    parser.add_argument("--validate-dataset", action="store_true", help="Validate JSONL dataset files in the output directory.")
+    parser.add_argument("--clean-dataset", action="store_true", help="Clean JSONL dataset files in the output directory by removing invalid examples.")
+    parser.add_argument("--overwrite-dataset", action="store_true", help="Overwrite dataset files when cleaning them. Otherwise writes cleaned copies with .cleaned.jsonl suffix.")
+    parser.add_argument("--dataset-prefix", default="data_", help="Prefix for dataset JSONL files to validate or clean.")
     return parser.parse_args()
 
 
@@ -393,17 +397,140 @@ def save_splits(results: List[Dict[str, str]], output_dir: Path) -> None:
         path = output_dir / f"data_{split_name}.jsonl"
         with path.open("w", encoding="utf-8") as handle:
             for item in data:
-                messages = item.get("messages")
-                if messages is None:
-                    messages = build_messages(item.get("prompt", ""), item.get("mermaid", ""))
+                prompt = item.get("prompt") or find_prompt_in_messages(item.get("messages", []))
+                mermaid = item.get("mermaid") or find_mermaid_in_messages(item.get("messages", []))
+                mermaid = clean_mermaid(mermaid)
+                messages = build_messages(prompt, mermaid)
                 handle.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
         print(f"  {split_name}: {len(data)} pairs  →  {path}")
+
+
+def find_prompt_in_messages(messages: List[Dict[str, str]]) -> str:
+    if not messages:
+        return ""
+    for msg in messages:
+        if msg.get("role") == "user" and isinstance(msg.get("content"), str):
+            return msg["content"]
+    return ""
+
+
+def find_mermaid_in_messages(messages: List[Dict[str, str]]) -> str:
+    if not messages:
+        return ""
+    for msg in reversed(messages):
+        if msg.get("role") == "assistant" and isinstance(msg.get("content"), str):
+            return msg["content"]
+    return ""
+
+
+def is_valid_message_list(messages: object) -> bool:
+    if not isinstance(messages, list):
+        return False
+    for msg in messages:
+        if not isinstance(msg, dict):
+            return False
+        if msg.get("role") not in {"system", "user", "assistant"}:
+            return False
+        if not isinstance(msg.get("content"), str):
+            return False
+    return True
+
+
+def validate_dataset_item(item: Dict[str, object]) -> Tuple[bool, str]:
+    prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else find_prompt_in_messages(item.get("messages", []))
+    mermaid = item.get("mermaid") if isinstance(item.get("mermaid"), str) else find_mermaid_in_messages(item.get("messages", []))
+    if not prompt:
+        return False, "missing prompt"
+    if not mermaid:
+        return False, "missing Mermaid content"
+
+    cleaned = clean_mermaid(mermaid)
+    valid, reason = validate(cleaned)
+    if not valid:
+        return False, reason
+
+    if "messages" in item:
+        if not is_valid_message_list(item["messages"]):
+            return False, "invalid messages format"
+        if len(item["messages"]) < 3:
+            return False, "messages list must contain system, user, and assistant"
+        if item["messages"][0].get("role") != "system":
+            return False, "first message role must be system"
+        if item["messages"][1].get("role") != "user":
+            return False, "second message role must be user"
+        if item["messages"][-1].get("role") != "assistant":
+            return False, "last message role must be assistant"
+    return True, ""
+
+
+def load_jsonl(path: Path) -> List[Dict[str, object]]:
+    items: List[Dict[str, object]] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                items.append(json.loads(line))
+    return items
+
+
+def validate_dataset_file(path: Path) -> None:
+    entries = load_jsonl(path)
+    invalid_count = 0
+    for index, entry in enumerate(entries, start=1):
+        entry = normalize_entry(entry)
+        valid, reason = validate_dataset_item(entry)
+        if not valid:
+            invalid_count += 1
+            logger.info("Invalid entry %d in %s: %s", index, path.name, reason)
+    if invalid_count == 0:
+        print(f"{path.name}: all {len(entries)} entries are valid")
+    else:
+        print(f"{path.name}: {invalid_count} invalid entries found out of {len(entries)}")
+
+
+def clean_dataset_file(path: Path, overwrite: bool = False) -> None:
+    entries = load_jsonl(path)
+    cleaned: List[Dict[str, object]] = []
+    invalid_count = 0
+    for entry in entries:
+        item = normalize_entry(entry)
+        prompt = item.get("prompt") if isinstance(item.get("prompt"), str) else find_prompt_in_messages(item.get("messages", []))
+        mermaid = item.get("mermaid") if isinstance(item.get("mermaid"), str) else find_mermaid_in_messages(item.get("messages", []))
+        mermaid = clean_mermaid(mermaid)
+        item["prompt"] = prompt
+        item["mermaid"] = mermaid
+        item["messages"] = build_messages(prompt, mermaid)
+        valid, reason = validate_dataset_item(item)
+        if valid:
+            cleaned.append(item)
+        else:
+            invalid_count += 1
+            logger.info("Dropping invalid entry in %s: %s", path.name, reason)
+
+    target_path = path if overwrite else path.with_suffix(path.suffix + ".cleaned.jsonl")
+    with target_path.open("w", encoding="utf-8") as handle:
+        for item in cleaned:
+            handle.write(json.dumps({"messages": item["messages"]}, ensure_ascii=False) + "\n")
+
+    print(f"{path.name}: cleaned {len(cleaned)} valid entries, removed {invalid_count} invalid entries, output -> {target_path}")
 
 
 def main() -> None:
     args = parse_args()
     output_dir = Path(args.output_dir)
     setup_logging(output_dir)
+
+    if args.validate_dataset or args.clean_dataset:
+        dataset_files = sorted(output_dir.glob(f"{args.dataset_prefix}*.jsonl"))
+        if not dataset_files:
+            logger.warning("No dataset files found in %s", output_dir)
+            return
+
+        for dataset_path in dataset_files:
+            if args.clean_dataset:
+                clean_dataset_file(dataset_path, overwrite=args.overwrite_dataset)
+            else:
+                validate_dataset_file(dataset_path)
+        return
 
     prompt_pool = build_prompt_pool()
     allow_reuse = args.prompt_reuse or args.target > len(prompt_pool)
