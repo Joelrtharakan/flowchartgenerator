@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 DEFAULT_CONFIG = {
     "ollama_url": "http://localhost:11434/api/generate",
-    "model": "qwen2.5-coder:3b",
+    "model": "qwen2.5-coder:7b",
     "output_dir": "data",
     "target": 500,
     "checkpoint_interval": 200,
@@ -252,6 +252,20 @@ def clean_mermaid(raw: str) -> str:
     return normalize_mermaid(raw)
 
 
+def enforce_inline_format(code: str) -> str:
+    lines = code.split("\n")
+
+    filtered = []
+    for line in lines:
+        if "-->" in line:
+            filtered.append(line.strip())
+
+    if lines and lines[0].startswith("flowchart"):
+        return lines[0].strip() + "\n" + "\n".join(filtered)
+
+    return "\n".join(filtered)
+
+
 def repair_mermaid(raw: str) -> str:
     mermaid = clean_mermaid(raw)
     lines = []
@@ -290,7 +304,12 @@ def repair_mermaid(raw: str) -> str:
 
         lines.append(line)
 
-    return "\n".join(lines).strip()
+    mermaid = "\n".join(lines).strip()
+
+    # enforce inline formatting
+    mermaid = enforce_inline_format(mermaid)
+
+    return mermaid
 
 
 def build_prompt_pool() -> List[str]:
@@ -347,7 +366,8 @@ def save_checkpoint(data: List[Dict[str, str]], output_dir: Path) -> None:
     checkpoint_path = output_dir / CHECKPOINT_FILE_NAME
     with checkpoint_path.open("w", encoding="utf-8") as handle:
         for item in data:
-            handle.write(json.dumps(normalize_entry(item), ensure_ascii=False) + "\n")
+            target_item = normalize_entry(item)
+            handle.write(json.dumps({"messages": target_item["messages"]}, ensure_ascii=False) + "\n")
 
 
 def extract_node_ids(line: str) -> Set[str]:
@@ -383,24 +403,23 @@ def validate(mermaid: str) -> Tuple[bool, str]:
             return False, "line exceeds 200 characters"
         if "/" in line:
             return False, "node syntax /.../ is not allowed"
+        if "-->" not in line:
+            return False, "standalone node definitions not allowed"
 
-        if "-->" in line:
-            match = ARROW_PATTERN.match(line)
-            if not match:
-                return False, f"invalid arrow syntax: {line}"
-            src, dst = match.group("src"), match.group("dst")
-            graph.setdefault(src, set()).add(dst)
-            defined_nodes.update({src, dst})
+        match = ARROW_PATTERN.match(line)
+        if not match:
+            return False, f"invalid arrow syntax: {line}"
+        src, dst = match.group("src"), match.group("dst")
+        graph.setdefault(src, set()).add(dst)
+        defined_nodes.update({src, dst})
 
-            if "|" in line:
-                labels = re.findall(r"\|(.*?)\|", line)
-                if not labels:
-                    return False, f"invalid arrow label syntax: {line}"
-                for label in labels:
-                    if label not in {"Yes", "No"}:
-                        return False, f"invalid arrow label '{label}'"
-        else:
-            defined_nodes.update(extract_node_ids(line))
+        if "|" in line:
+            labels = re.findall(r"\|(.*?)\|", line)
+            if not labels:
+                return False, f"invalid arrow label syntax: {line}"
+            for label in labels:
+                if label not in {"Yes", "No"}:
+                    return False, f"invalid arrow label '{label}'"
 
     if "A" not in defined_nodes or "Z" not in defined_nodes:
         return False, "required node IDs A and Z are missing"
@@ -440,7 +459,7 @@ def save_splits(results: List[Dict[str, str]], output_dir: Path) -> None:
             for item in data:
                 prompt = item.get("prompt") or find_prompt_in_messages(item.get("messages", []))
                 mermaid = item.get("mermaid") or find_mermaid_in_messages(item.get("messages", []))
-                mermaid = clean_mermaid(mermaid)
+                mermaid = repair_mermaid(mermaid)
                 messages = build_messages(prompt, mermaid)
                 handle.write(json.dumps({"messages": messages}, ensure_ascii=False) + "\n")
         print(f"  {split_name}: {len(data)} pairs  →  {path}")
@@ -588,8 +607,8 @@ def main() -> None:
     else:
         results = []
 
-    seen_mermaid = {item["mermaid"] for item in results}
-    seen_prompts: Set[str] = set()
+    seen_mermaid = {item.get("mermaid") or find_mermaid_in_messages(item.get("messages", [])) for item in results}
+    seen_prompts = {item.get("prompt") or find_prompt_in_messages(item.get("messages", [])) for item in results}
     generator = prompt_generator(prompt_pool, allow_reuse)
 
     def _signal_handler(signum, frame):
@@ -627,7 +646,7 @@ def main() -> None:
         if not raw:
             continue
 
-        mermaid = clean_mermaid(raw)
+        mermaid = repair_mermaid(raw)
         if mermaid in seen_mermaid:
             logger.debug("Duplicate Mermaid output skipped")
             continue
