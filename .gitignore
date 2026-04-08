@@ -45,3 +45,4 @@ checkpoint-*/
 *.safetensors
 *.pt
 *.pth
+*.zip
