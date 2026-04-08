@@ -1,0 +1,22 @@
+# Deep Learning Core
+torch>=2.2.0
+
+# Hugging Face ML Stack (Newer versions needed for Phi-3 models)
+transformers>=4.40.0
+datasets>=2.18.0
+accelerate>=0.29.0
+
+# Parameter-Efficient Fine-Tuning & Quantization (QLoRA)
+peft>=0.10.0
+bitsandbytes>=0.43.0
+
+# PostgreSQL interaction
+psycopg2-binary>=2.9.9
+
+# Environment loader
+python-dotenv
+
+# API and Web Server
+fastapi
+uvicorn
+pydantic

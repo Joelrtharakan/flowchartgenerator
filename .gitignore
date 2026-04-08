@@ -38,3 +38,10 @@ checkpoint_raw.jsonl
 # OS generated files
 .DS_Store
 Thumbs.db
+
+# Model outputs and checkpoints
+*phi3-finetuned*/
+checkpoint-*/
+*.safetensors
+*.pt
+*.pth
