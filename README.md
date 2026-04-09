@@ -10,9 +10,10 @@ The system is built around the **Phi-3 Mini Instruct** model and enhanced using 
 
 * Natural language to Mermaid flowchart generation
 * Continuous dataset expansion via PostgreSQL
-* Automated retraining pipeline *(planned via monitor system)*
+* Automated retraining pipeline
 * Deployment on Azure Virtual Machine using FastAPI
 * Real-time logging and monitoring
+* Dedicated frontend for generation and logging visualization
 
 ---
 
@@ -21,41 +22,47 @@ The system is built around the **Phi-3 Mini Instruct** model and enhanced using 
 The system consists of three major components:
 
 ### 1. Training Pipeline
-
-* Fetches prompt–flowchart pairs from PostgreSQL
+* Fetches prompt-flowchart pairs from PostgreSQL
 * Applies filtering and formatting
 * Fine-tunes Phi-3 using QLoRA (4-bit quantization)
 * Saves LoRA adapters (lightweight model updates)
+* Evaluates using `test_model.py` and monitors drift with `monitor.py`
 
 ### 2. Inference API
-
-* FastAPI-based backend deployed on Azure VM
+* FastAPI-based backend (`training/app.py`) deployed on Azure VM
 * Loads base Phi-3 model + LoRA adapter
 * Accepts prompts and returns Mermaid flowcharts
 * Provides logging endpoints for monitoring
 
-### 3. Deployment Environment
-
-* Azure Virtual Machine (CPU-based inference)
-* Python virtual environment
-* Model artifacts stored locally
-* API exposed via Uvicorn
+### 3. Frontend Endpoints
+* Simple web UI served on Python HTTP server (`frontend/`)
+* Displays flowcharts natively
+* Dedicated logs web interface (`frontend-logs/`) 
+* Inference running on Azure VM (`20.219.50.73`)
 
 ---
 
 ## Project Structure
 
-```
+```text
 .
-├── app.py                  # FastAPI inference server
-├── train_phi3.py           # Fine-tuning script (GPU required)
-├── phi3-finetuned/         # LoRA adapter files
-├── model.zip               # Zipped adapter (for transfer)
-├── requirements.txt        # Python dependencies
-├── api.log                 # API logs
-├── monitor.log             # Training/monitor logs (future use)
-├── current_model.txt       # Points to active model path
-└── venv/                   # Virtual environment
+├── data/                   # Train, Test, and Validation JSONL datasets
+├── frontend/               # Frontend Generation Web App
+│   ├── app.js
+│   ├── index.css
+│   ├── index.html
+│   └── server.py           # Local HTTP Server for frontend
+├── frontend-logs/          # Frontend Logs Web App
+│   └── index.html
+├── tests/                  # Directory for structural test suites
+└── training/               # Fine-tuning, Validation, and inference codebase
+    ├── app.py              # FastAPI inference server
+    ├── monitor.py          # Data/Model drift monitoring & retraining system
+    ├── train_phi3.py       # Fine-tuning script (GPU required)
+    ├── test_model.py       # Model testing script
+    ├── current_model.txt   # File indicating the currently active LoRA adapter
+    ├── requirements.txt    # Python dependencies
+    └── phi3-finetuned/     # Output LoRA adapter files and checkpoints
 ```
 
 ---
@@ -68,13 +75,12 @@ The system consists of three major components:
 ### Frameworks Used
 
 * Transformers
-
 * PEFT (LoRA)
-
 * Accelerate
+* FastAPI (Inference)
+* Mermaid.js (Frontend Chart Rendering)
 
 * **Training Device:** GPU required (local, Colab, or cloud GPU)
-
 * **Inference Device:** CPU (Azure VM)
 
 ---
@@ -88,7 +94,7 @@ The system consists of three major components:
 
 ### Environment Variables
 
-```
+```text
 DB_HOST
 DB_USER
 DB_PASSWORD
@@ -98,6 +104,7 @@ DB_NAME (optional)
 ### Run Training
 
 ```bash
+cd training
 python train_phi3.py
 ```
 
@@ -105,8 +112,8 @@ python train_phi3.py
 
 LoRA adapter will be saved in:
 
-```
-./phi3-finetuned/
+```text
+training/phi3-finetuned/
 ```
 
 ---
@@ -116,20 +123,14 @@ LoRA adapter will be saved in:
 ### 1. Setup VM
 
 * Ubuntu 22.04 or later
-* Open port **8000** in Azure Network Security Group
+* Open port **8000** for API and **8082** for Frontend
 
----
-
-### 2. Transfer Files
+### 2. Transfer Files & Dependencies
 
 ```bash
-scp app.py azureuser@<VM_IP>:~
-scp -r phi3-finetuned azureuser@<VM_IP>:~
+scp -r training/app.py azureuser@<VM_IP>:~
+scp -r training/phi3-finetuned azureuser@<VM_IP>:~
 ```
-
----
-
-### 3. Setup Environment
 
 ```bash
 sudo apt update
@@ -142,30 +143,25 @@ pip install --upgrade pip
 pip install fastapi uvicorn torch transformers peft accelerate psycopg2-binary
 ```
 
----
-
-### 4. Run API
+### 3. Run FastAPI Model API (Backend)
 
 ```bash
+cd training
 uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
----
+### 4. Run Frontend
 
-### 5. Access API
+```bash
+cd frontend
+python3 server.py
+```
 
-* **Swagger UI:**
+### 5. Access Endpoints
 
-  ```
-  http://<VM_IP>:8000/docs
-  ```
-
-* **Logs:**
-
-  ```
-  http://<VM_IP>:8000/logs/api
-  http://<VM_IP>:8000/logs/monitor
-  ```
+* **Frontend Web UI:** `http://<VM_IP>:8082`
+* **Swagger UI:** `http://<VM_IP>:8000/docs`
+* **Logs UI:** Hosted interface under frontend-logs directory 
 
 ---
 
@@ -173,7 +169,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ### Endpoint
 
-```
+```http
 POST /generate
 ```
 
@@ -200,74 +196,49 @@ POST /generate
 The system logs:
 
 * Incoming prompts
-* Generated outputs (truncated)
+* Generated outputs
 * Runtime events
 
-### Log Files
+### Log Endpoints via API (`training/app.py`)
+* `GET /logs/api`
+* `GET /logs/monitor`
 
-```
-api.log
-monitor.log
-```
-
-Logs can also be accessed via API endpoints.
+Logs can also be accessed interactively via the frontend-logs web UI.
 
 ---
 
 ## Model Versioning
 
-The system uses:
+The system relies on `training/current_model.txt`.
 
-```
-current_model.txt
-```
-
-This file determines which LoRA adapter is currently active.
+This file controls which LoRA adapter version the FastAPI app attempts to load upon startup (e.g. `phi3-finetuned/checkpoint-50`).
 
 ### Benefits
-
-* Switch models without modifying code
-* Support multiple trained versions
-* Enable rollback capability
+* Hot-swappable model instances
+* Fast rollback without backend codebase modifications
+* Decoupled state representations 
 
 ---
 
 ## Future Enhancements
 
-* Automatic retraining using `monitor.py`
-* Dataset growth detection
-* Model version management
-* Frontend dashboard for logs and usage
+* Automatic database polling trigger for `monitor.py`
+* Dataset growth detection metrics
+* Advanced interactive UI features in frontend apps
 * CI/CD pipeline for deployment
-* GPU-based Azure deployment option
+* GPU-based Azure deployment scaling options
 
 ---
 
 ## Key Design Decisions
 
-* QLoRA used to reduce GPU memory usage during training
-* LoRA adapters used instead of full model retraining
-* CPU inference chosen for cost efficiency
-* FastAPI used for lightweight deployment
-* Logging exposed via API for observability
-
----
-
-## Limitations
-
-* Training requires GPU (cannot run on CPU)
-* CPU inference is slower compared to GPU
-* No automated retraining pipeline yet (manual trigger required)
-* No UI dashboard implemented yet
+* **QLoRA** implemented to reduce memory footprint heavily during training loops
+* **LoRA adapters** instead of full-precision structural model cloning ensures disk feasibility
+* **Frontend Proxy:** Custom simple python HTTP server mitigates client-side CORS to inference endpoint 
+* Componentized modular codebase structure grouping logical sets into `frontend/` and `training/`
 
 ---
 
 ## Conclusion
 
-This project demonstrates a scalable pipeline for:
-
-* Fine-tuning LLMs on structured generation tasks
-* Deploying them efficiently on cloud infrastructure
-* Maintaining extensibility for continuous learning systems
-
-It is designed to evolve into a fully automated ML system with monitoring, retraining, and version control.
+This project demonstrates a scalable pipeline for fine-tuning LLMs on structured task generation and deploying them scalably using decoupled components. The pipeline architecture ensures fluid extensibility for monitoring, retraining loops, and comprehensive full-system web accessibility.
