@@ -8,9 +8,21 @@ from peft import PeftModel
 # CONFIG
 # -----------------------
 MODEL_NAME = "microsoft/phi-3-mini-4k-instruct"
-LORA_PATH = "./phi3-finetuned"
+
+with open("current_model.txt") as f:
+    LORA_PATH = f.read().strip()
+
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -----------------------
 # LOAD MODEL (CPU)

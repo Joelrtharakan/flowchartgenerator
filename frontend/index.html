@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MermaidGPT - AI Flowchart Generator</title>
+    <meta name="description" content="Generate beautiful Mermaid flowcharts instantly using AI.">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <main class="container">
+        <!-- Header Section -->
+        <header class="header">
+            <div class="logo">
+                <h1>Mermaid<span class="highlight">GPT</span></h1>
+            </div>
+            <p class="subtitle">Describe your logic, and let AI build the flowchart.</p>
+        </header>
+
+        <!-- Input Section -->
+        <section class="input-section glass-panel">
+            <label for="prompt-input" class="visually-hidden">Enter your prompt</label>
+            <textarea 
+                id="prompt-input" 
+                placeholder="E.g., 'A user login flow: starts at Login Page, successful login goes to Dashboard, failed goes to Error Page, from Error Page goes back to Login Page.'"
+                rows="4"
+            ></textarea>
+            
+            <div class="actions">
+                <button id="generate-btn" class="primary-btn">
+                    <span class="btn-text">Generate Flowchart</span>
+                </button>
+            </div>
+        </section>
+
+        <!-- Output Section -->
+        <section class="output-section glass-panel" id="output-panel">
+            <!-- Initial Blank State -->
+            <div class="empty-state" id="empty-state">
+                <p>Your generated flowchart will appear here.</p>
+            </div>
+
+            <!-- Loading State -->
+            <div class="loading-state hidden" id="loading-state">
+                <div class="typing-indicator">
+                    <span></span><span></span><span></span>
+                </div>
+                <p>Generating flowchart...</p>
+            </div>
+
+            <!-- Error State -->
+            <div class="error-state hidden" id="error-state">
+                <p id="error-message">Failed to generate flowchart. Please try again.</p>
+            </div>
+
+            <!-- Success State (Mermaid Container) -->
+            <div class="success-state hidden" id="success-state">
+                <div class="chart-header">
+                    <h3>Generated Result</h3>
+                </div>
+                <div class="chart-container" id="chart-container">
+                    <!-- The SVG will be injected here -->
+                </div>
+                
+                <div class="code-container" id="code-container">
+                    <div class="code-header">
+                        <span>Mermaid Syntax</span>
+                        <button id="copy-btn" class="secondary-btn">Copy Code</button>
+                    </div>
+                    <pre><code id="mermaid-code"></code></pre>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- Dependencies -->
+    <script type="module" src="app.js"></script>
+</body>
+</html>

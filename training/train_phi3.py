@@ -19,31 +19,12 @@ from transformers import (
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_kbit_training,
 )
 
 # ─────────────────────────────────────────────
-# 0. GPU GUARD — fail fast if no CUDA
+# 0. SETUP
 # ─────────────────────────────────────────────
 load_dotenv() # Load variables from .env file into os.environ
-
-if not torch.cuda.is_available():
-    sys.exit(
-        "\n❌  No CUDA GPU detected.\n"
-        "    This script requires a GPU.  Options:\n"
-        "      • Google Colab  → Runtime > Change runtime type > T4 GPU (free)\n"
-        "      • RunPod / vast.ai → cheapest GPU instance\n"
-        "      • Local RTX 3060 / 3090 / 4090\n"
-    )
-
-GPU_NAME = torch.cuda.get_device_name(0)
-USE_BF16 = torch.cuda.is_bf16_supported()   # Ampere+ (A100, RTX 30xx/40xx)
-USE_FP16 = not USE_BF16                     # Older cards (T4, V100, RTX 20xx)
-DTYPE    = torch.bfloat16 if USE_BF16 else torch.float16
-
-print(f"✅  GPU   : {GPU_NAME}")
-print(f"   VRAM  : {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
-print(f"   dtype : {'bfloat16' if USE_BF16 else 'float16'}")
 
 # ─────────────────────────────────────────────
 # 1. DATABASE — fetch training pairs
@@ -122,44 +103,30 @@ if tokenizer.pad_token is None:
     tokenizer.pad_token    = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
 
-from transformers import BitsAndBytesConfig
-
 # ─────────────────────────────────────────────
-# 4. MODEL  (QLoRA — 4-bit on GPU)
+# 4. MODEL
 # ─────────────────────────────────────────────
-print("\n[4/6] Loading model in 4-bit (QLoRA) …")
-
-quantization_config = BitsAndBytesConfig(
-    load_in_4bit=True,
-    bnb_4bit_quant_type="nf4",
-    bnb_4bit_use_double_quant=True,
-    bnb_4bit_compute_dtype=DTYPE
-)
+print("\n[4/6] Loading model on CPU...")
 
 model = AutoModelForCausalLM.from_pretrained(
     MODEL_NAME,
-    quantization_config=quantization_config,
-    torch_dtype       = DTYPE,  # bf16 or fp16 for LoRA adapter weights
-    device_map        = "auto", # fills all available GPU VRAM automatically
+    torch_dtype=torch.float32,
+    device_map="cpu"
 )
 
-# Mandatory before applying LoRA to a quantised model
-model = prepare_model_for_kbit_training(
-    model,
-    use_gradient_checkpointing=True,
-)
-model.config.use_cache = False  # must be False for gradient checkpointing
+model.config.use_cache = False
+model.gradient_checkpointing_enable()
 
 # ─────────────────────────────────────────────
 # 5. LoRA CONFIG
 # ─────────────────────────────────────────────
 lora_config = LoraConfig(
-    r              = 16,        # rank — well-suited for ~500 samples
-    lora_alpha     = 32,        # effective scale = alpha/r = 2.0
-    target_modules = ["qkv_proj", "o_proj", "gate_up_proj", "down_proj"],
-    lora_dropout   = 0.05,
-    bias           = "none",
-    task_type      = "CAUSAL_LM",
+    r=8,
+    lora_alpha=16,
+    target_modules=["qkv_proj", "o_proj"],
+    lora_dropout=0.1,
+    bias="none",
+    task_type="CAUSAL_LM",
 )
 
 model = get_peft_model(model, lora_config)
@@ -196,44 +163,26 @@ val_dataset.set_format("torch")
 data_collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
 
 # ─────────────────────────────────────────────
-# 7. TRAINING ARGUMENTS  (GPU-optimised)
+# 7. TRAINING ARGUMENTS
 # ─────────────────────────────────────────────
 training_args = TrainingArguments(
-    output_dir                  = "./phi3-finetuned",
+    output_dir="./temp",
 
-    # Epochs & batching
-    num_train_epochs            = 3,
-    per_device_train_batch_size = 4,   # bump to 8 if VRAM > 16 GB
-    gradient_accumulation_steps = 4,   # effective batch = 16
+    num_train_epochs=1,
+    per_device_train_batch_size=1,
+    gradient_accumulation_steps=2,
 
-    # Optimiser
-    learning_rate               = 2e-4,
-    lr_scheduler_type           = "cosine",
-    warmup_steps                = 5,
-    weight_decay                = 0.01,
-    max_grad_norm               = 1.0,
-    optim                       = "paged_adamw_32bit",  # saves GPU VRAM
+    learning_rate=2e-4,
 
-    # Precision — auto-set from GPU capability
-    fp16                        = USE_FP16,
-    bf16                        = USE_BF16,
+    logging_steps=10,
+    save_steps=50,
 
-    # Evaluation
-    eval_strategy               = "steps",
-    eval_steps                  = 50,
-    load_best_model_at_end      = True,
-    metric_for_best_model       = "eval_loss",
-    greater_is_better           = False,
+    fp16=False,
+    bf16=False,
 
-    # Logging & checkpoints
-    logging_steps               = 10,
-    save_steps                  = 50,
-    save_total_limit            = 2,
-    report_to                   = "none",  # swap to "wandb" if you use W&B
+    evaluation_strategy="no",
 
-    # GPU memory savers
-    gradient_checkpointing      = True,
-    dataloader_pin_memory       = True,
+    report_to="none",
 )
 
 # ─────────────────────────────────────────────
@@ -255,10 +204,19 @@ trainer.train()
 # ─────────────────────────────────────────────
 # 9. SAVE
 # ─────────────────────────────────────────────
-SAVE_DIR = "./phi3-finetuned"
+BASE_DIR = "models"
+os.makedirs(BASE_DIR, exist_ok=True)
+
+existing = os.listdir(BASE_DIR)
+versions = [int(v.replace("v", "")) for v in existing if v.startswith("v")]
+
+next_version = max(versions) + 1 if versions else 1
+
+SAVE_DIR = f"{BASE_DIR}/v{next_version}"
+os.makedirs(SAVE_DIR, exist_ok=True)
+
 model.save_pretrained(SAVE_DIR)
 tokenizer.save_pretrained(SAVE_DIR)
 
 print(f"\n✅  Done.  Model saved → {SAVE_DIR}/")
-print(f"   Peak GPU memory used: {torch.cuda.max_memory_allocated() / 1e9:.2f} GB")
 print("   Next step: evaluate_phi3.py  →  deploy")
