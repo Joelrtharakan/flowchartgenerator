@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 DEFAULT_CONFIG = {
     "ollama_url": "http://localhost:11434/api/generate",
-    "model": "qwen2.5-coder:3b",
+    "model": "qwen2.5-coder:7b",
     "output_dir": "data",
     "target": 500,
     "checkpoint_interval": 200,
