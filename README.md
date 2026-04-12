@@ -4,7 +4,7 @@
 
 This project implements an end-to-end system for generating Mermaid flowcharts from natural language prompts using a fine-tuned large language model.
 
-The system is built around the **Phi-3 Mini Instruct** model and enhanced using **QLoRA-based fine-tuning** on domain-specific data.
+The system is built around the **Phi-3 Mini Instruct** model and enhanced using **LoRA-based fine-tuning** on domain-specific data.
 
 ### Features
 
@@ -24,7 +24,7 @@ The system consists of three major components:
 ### 1. Training Pipeline
 * Fetches prompt-flowchart pairs from PostgreSQL
 * Applies filtering and formatting
-* Fine-tunes Phi-3 using QLoRA (4-bit quantization)
+* Fine-tunes Phi-3 using standard LoRA
 * Saves LoRA adapters (lightweight model updates)
 * Evaluates using `test_model.py` and monitors drift with `monitor.py`
 
@@ -70,7 +70,7 @@ The system consists of three major components:
 ## Model Details
 
 * **Base Model:** microsoft/phi-3-mini-4k-instruct
-* **Fine-tuning Method:** QLoRA (4-bit quantization)
+* **Fine-tuning Method:** LoRA (full precision float32)
 
 ### Frameworks Used
 
