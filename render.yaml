@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: mermaid-gpt-frontend
+    runtime: python
+    rootDirectory: frontend
+    buildCommand: ""
+    startCommand: python server.py
+    envVars:
+      - key: PORT
+        value: 8082
+      - key: API_URL
+        value: "http://20.219.50.73:8000/generate"

@@ -5,8 +5,8 @@ import json
 import os
 import re
 
-PORT = 8082
-API_URL = "http://20.219.50.73:8000/generate"
+PORT = int(os.environ.get('PORT', 8082))
+API_URL = os.environ.get('API_URL', "http://20.219.50.73:8000/generate")
 
 def fix_mermaid(code: str) -> str:
     """
