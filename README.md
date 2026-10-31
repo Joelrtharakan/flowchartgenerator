@@ -57,6 +57,7 @@ The system consists of three major components:
 ├── tests/                  # Unit tests (API, frontend proxy, dataset script)
 ├── k8s/                    # Kubernetes manifests (kustomize)
 ├── terraform/              # Azure infrastructure as code
+├── terraform-local/        # Local kind cluster as code (no cloud account needed)
 ├── ansible/                # VM configuration and stack deployment
 ├── monitoring/             # Prometheus rules + Grafana dashboards
 ├── docs/DEVOPS.md          # DevOps guide mapped to the course rubric

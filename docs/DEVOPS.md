@@ -63,6 +63,23 @@ kubectl -n flowchart rollout undo deploy/api
 kubectl -n flowchart scale deploy/api --replicas=4
 ```
 
+## No cloud account? Run everything locally
+
+Terraform creates a 3-node Kubernetes cluster inside Docker (kind), then the app is deployed onto it:
+
+```bash
+cd terraform-local && terraform init && terraform apply -auto-approve && cd ..
+docker build -f Dockerfile.api -t flowchart-api:local .
+docker build -f Dockerfile.frontend -t flowchart-frontend:local .
+kind load docker-image flowchart-api:local flowchart-frontend:local --name flowchart
+kubectl apply -k k8s/overlays/local
+kubectl -n flowchart get pods,svc,hpa      # frontend: http://localhost:8082
+# teardown
+cd terraform-local && terraform destroy -auto-approve
+```
+
+The local overlay uses small resource limits and `SKIP_MODEL_LOAD=1`, so the API answers `/health` and `/metrics` but `/generate` returns 503 until a model is mounted.
+
 ## Provision and deploy to Azure
 
 ```bash
