@@ -1,0 +1,4 @@
+location         = "centralindia"
+vm_size          = "Standard_D4s_v5"
+ssh_public_key   = "ssh-rsa AAAA... you@example.com"
+allowed_ssh_cidr = "203.0.113.4/32"

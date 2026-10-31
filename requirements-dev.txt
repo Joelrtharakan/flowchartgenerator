@@ -1,0 +1,12 @@
+# Lightweight dependencies for CI: tests run without torch/transformers
+fastapi
+uvicorn
+pydantic
+httpx
+requests
+tqdm
+prometheus-fastapi-instrumentator>=7.0.0
+pytest
+pytest-cov
+ruff
+bandit

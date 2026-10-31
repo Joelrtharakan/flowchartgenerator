@@ -38,7 +38,7 @@ The system consists of three major components:
 * Simple web UI served on Python HTTP server (`frontend/`)
 * Displays flowcharts natively
 * Dedicated logs web interface (`frontend-logs/`) 
-* Inference running on Azure VM (`20.219.50.73`)
+* Inference running on Azure VM (`20.219.147.18`)
 
 ---
 
@@ -54,7 +54,13 @@ The system consists of three major components:
 │   └── server.py           # Local HTTP Server for frontend
 ├── frontend-logs/          # Frontend Logs Web App
 │   └── index.html
-├── tests/                  # Directory for structural test suites
+├── tests/                  # Unit tests (API, frontend proxy, dataset script)
+├── k8s/                    # Kubernetes manifests (kustomize)
+├── terraform/              # Azure infrastructure as code
+├── ansible/                # VM configuration and stack deployment
+├── monitoring/             # Prometheus rules + Grafana dashboards
+├── docs/DEVOPS.md          # DevOps guide mapped to the course rubric
+├── Dockerfile.api / Dockerfile.frontend / docker-compose.yml
 └── training/               # Fine-tuning, Validation, and inference codebase
     ├── app.py              # FastAPI inference server
     ├── monitor.py          # Data/Model drift monitoring & retraining system
@@ -118,7 +124,21 @@ training/phi3-finetuned/
 
 ---
 
-## Deployment on Azure VM
+## DevOps Pipeline
+
+Containerized (multi-stage Docker), tested and scanned in GitHub Actions, provisioned with Terraform,
+deployed with Ansible/Kubernetes, and monitored with Prometheus + Grafana.
+See **[docs/DEVOPS.md](docs/DEVOPS.md)** for architecture, setup and demo steps, and
+**[CONTRIBUTING.md](CONTRIBUTING.md)** for the branching and PR workflow.
+
+```bash
+cp .env.example .env
+SKIP_MODEL_LOAD=1 docker compose up -d --build   # API :8000, UI :8082, Prometheus :9090, Grafana :3000
+```
+
+---
+
+## Deployment on Azure VM (manual)
 
 ### 1. Setup VM
 

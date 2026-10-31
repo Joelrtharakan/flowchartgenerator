@@ -1,0 +1,11 @@
+# Holds the LoRA adapters (models/vN) and current_model.txt
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: flowchart-models
+  namespace: flowchart
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 5Gi

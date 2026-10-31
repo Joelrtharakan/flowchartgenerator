@@ -1,0 +1,105 @@
+# DevOps Implementation Guide
+
+This document maps the project to the DevOps skill-based evaluation rubric and explains how to run each part.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    Dev[Developer] -->|feature branch + PR| GH[GitHub]
+    GH --> CI[GitHub Actions CI]
+    CI -->|lint, SAST, tests, secret scan| Q{Quality gates}
+    Q --> B[Build Docker images]
+    B --> T[Trivy scan + smoke test]
+    T --> R[(GHCR registry)]
+    R --> S[Staging: compose + Prometheus check]
+    S -->|manual approval| P[Production: Ansible -> Azure VM]
+    TF[Terraform] -->|provisions| VM[Azure VM + NSG + VNet]
+    P --> VM
+    VM --> API[FastAPI + Phi-3 LoRA]
+    VM --> FE[Frontend proxy]
+    API -->|/metrics| PR[Prometheus]
+    PR --> G[Grafana dashboards + alerts]
+```
+
+## Rubric mapping
+
+| Rubric criterion | Evidence in this repo |
+|---|---|
+| DevOps ecosystem, version control, collaboration | [CONTRIBUTING.md](../CONTRIBUTING.md) (lifecycle, branching, PR flow, conflict handling), PR template, Dependabot, protected `master`, feature branches |
+| CI/CD pipeline automation | [.github/workflows/ci-cd.yml](../.github/workflows/ci-cd.yml): lint (ruff), SAST (bandit), unit tests + coverage artifact, secret scan, IaC validation, image build, Trivy scan, smoke test, registry publish, staging, gated production deploy |
+| Containerization and orchestration | Multi-stage non-root [Dockerfile.api](../Dockerfile.api), [Dockerfile.frontend](../Dockerfile.frontend), [docker-compose.yml](../docker-compose.yml), images in GHCR, Kubernetes manifests in [k8s/](../k8s) (Deployments, Services, HPA scaling, rolling updates with `maxUnavailable: 0`, probes, PVC) |
+| IaC, cloud deployment, monitoring | [terraform/](../terraform) (Azure RG, VNet, NSG, public IP, VM), [ansible/](../ansible) (Docker install, firewall, stack deploy), Prometheus + Grafana + alert rules in [monitoring/](../monitoring), app logs endpoints, secrets via GitHub Secrets / K8s Secret / `.env` (never committed), Trivy + bandit + gitleaks scanning |
+| Documentation and presentation | This guide, README, architecture diagram, demo script below |
+
+## Run it locally (Docker Compose)
+
+```bash
+cp .env.example .env            # set GRAFANA_ADMIN_PASSWORD
+SKIP_MODEL_LOAD=1 docker compose up -d --build   # demo mode, no 7 GB model
+# full mode: place adapters in training/models/ and training/models/current_model.txt (containing e.g. `models/v1`), then omit SKIP_MODEL_LOAD; with no adapter the base Phi-3 model is served
+```
+
+| Service | URL |
+|---|---|
+| Frontend | http://localhost:8082 |
+| API docs / health / metrics | http://localhost:8000/docs, `/health`, `/metrics` |
+| Prometheus | http://localhost:9090 (Status -> Targets, Alerts) |
+| Grafana | http://localhost:3000 (dashboard: *Flowchart API*) |
+
+## Kubernetes (minikube / kind / AKS)
+
+```bash
+kubectl apply -f k8s/base/namespace.yaml
+kubectl -n flowchart create secret generic flowchart-secrets --from-literal=HF_TOKEN=<token>
+# edit images in k8s/base/kustomization.yaml (ghcr.io/<owner>/flowchart-*), then:
+kubectl apply -k k8s/base
+kubectl -n flowchart get pods,svc,hpa
+# rolling update demo
+kubectl -n flowchart set image deploy/api api=ghcr.io/<owner>/flowchart-api:<new-sha>
+kubectl -n flowchart rollout status deploy/api
+kubectl -n flowchart rollout undo deploy/api
+# scaling demo
+kubectl -n flowchart scale deploy/api --replicas=4
+```
+
+## Provision and deploy to Azure
+
+```bash
+cd terraform
+cp terraform.tfvars.example terraform.tfvars   # add your SSH public key + your IP
+az login && terraform init && terraform plan && terraform apply
+cd ../ansible
+cp inventory.ini.example inventory.ini         # use the public_ip output
+GRAFANA_ADMIN_PASSWORD=... ansible-playbook playbook.yml -e image_owner=<github-user>
+# copy LoRA adapters + current_model.txt into /opt/flowchart/models on the VM
+```
+
+Grafana and Prometheus listen on `127.0.0.1` on the VM; reach them with
+`ssh -L 3000:localhost:3000 -L 9090:localhost:9090 azureuser@<ip>`.
+
+## GitHub setup for the pipeline
+
+| Item | Where | Value |
+|---|---|---|
+| Environments `staging`, `production` | Settings -> Environments | Add required reviewers to `production` for manual approval |
+| Variable `DEPLOY_ENABLED` | Settings -> Variables | `true` once the VM exists |
+| Secrets `VM_HOST`, `VM_USER`, `VM_SSH_KEY`, `GRAFANA_ADMIN_PASSWORD` | Settings -> Secrets | from Terraform output / your key |
+| Branch protection on `master` | Settings -> Branches | see CONTRIBUTING.md |
+
+Images are pushed to `ghcr.io/<owner>/flowchart-api` and `flowchart-frontend`; set the packages to public or give the VM a pull token.
+
+## Suggested demo script (for the viva / presentation)
+
+1. Show the PR from a `feature/*` branch; CI checks run (lint, tests, scans).
+2. Merge; show the pipeline stages go green and the image appear in GHCR.
+3. Show the Trivy results in the Security tab.
+4. `docker compose up`, send a prompt in the UI, show `/metrics`.
+5. Open Grafana: request rate and latency move; stop the API container to trigger the `ApiDown` alert in Prometheus.
+6. Show `kubectl rollout` and `scale`, then `terraform plan` output.
+
+## Known limitations
+
+- The model (Phi-3 + LoRA adapters) is not baked into the image or the repo; adapters are mounted from a volume/PVC.
+- CPU inference is slow; the `SlowGeneration` alert threshold (60 s) reflects that.
+- Terraform state is local. For a team, add an `azurerm` remote backend.

@@ -61,3 +61,13 @@ htmlcov/
 # Common databases
 *.db
 *.sqlite3
+
+# Test artifacts
+tests/_logs/
+coverage.xml
+.terraform/
+*.tfstate*
+*.tfvars
+!terraform.tfvars.example
+ansible/inventory.ini
+tfplan

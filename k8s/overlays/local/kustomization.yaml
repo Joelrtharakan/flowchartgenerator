@@ -1,0 +1,43 @@
+# Laptop overlay for kind/minikube: tiny resources, model skipped, NodePort frontend.
+#   kind load docker-image flowchart-api:local flowchart-frontend:local --name flowchart
+#   kubectl apply -k k8s/overlays/local
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+images:
+  - name: ghcr.io/OWNER/flowchart-api
+    newName: flowchart-api
+    newTag: local
+  - name: ghcr.io/OWNER/flowchart-frontend
+    newName: flowchart-frontend
+    newTag: local
+patches:
+  - target: { kind: ConfigMap, name: flowchart-config }
+    patch: |-
+      - op: replace
+        path: /data/SKIP_MODEL_LOAD
+        value: "1"
+  - target: { kind: Deployment, name: api }
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+      - op: replace
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: { cpu: 50m, memory: 128Mi }
+          limits: { cpu: 500m, memory: 512Mi }
+  - target: { kind: Deployment, name: frontend }
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never
+  - target: { kind: Service, name: frontend }
+    patch: |-
+      - op: replace
+        path: /spec/type
+        value: NodePort
+      - op: add
+        path: /spec/ports/0/nodePort
+        value: 30082

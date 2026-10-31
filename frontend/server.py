@@ -6,7 +6,9 @@ import os
 import re
 
 PORT = 8082
-API_URL = "http://20.219.50.73:8000/generate"
+PORT = int(os.getenv("PORT", PORT))
+API_TIMEOUT = int(os.getenv("API_TIMEOUT", "300"))
+API_URL = os.getenv("API_URL", "http://20.219.147.18:8000/generate")
 
 def fix_mermaid(code: str) -> str:
     """
@@ -48,15 +50,24 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
         self.send_header('Access-Control-Allow-Origin', '*')
         super().end_headers()
 
+    def do_GET(self):
+        if self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+        else:
+            super().do_GET()
+
     def do_POST(self):
         if self.path == '/generate':
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
-            
+
             # Proxy request to Azure
             req = urllib.request.Request(API_URL, data=post_data, headers={'Content-Type': 'application/json'})
             try:
-                with urllib.request.urlopen(req) as response:
+                with urllib.request.urlopen(req, timeout=API_TIMEOUT) as response:  # nosec B310 - API_URL is operator-configured
                     azure_response = response.read()
 
                 # Parse, sanitize, and re-encode
@@ -78,10 +89,15 @@ class ProxyHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
-os.chdir(os.path.dirname(os.path.abspath(__file__)))
-# Use socketserver with allow_reuse_address to avoid address bound errors on restart
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("", PORT), ProxyHTTPRequestHandler) as httpd:
-    print(f"Proxy server running at http://127.0.0.1:{PORT}")
-    print(f"Proxying /generate directly to {API_URL}")
-    httpd.serve_forever()
+def main():
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    # Use socketserver with allow_reuse_address to avoid address bound errors on restart
+    socketserver.TCPServer.allow_reuse_address = True
+    with socketserver.TCPServer(("", PORT), ProxyHTTPRequestHandler) as httpd:
+        print(f"Proxy server running at http://127.0.0.1:{PORT}")
+        print(f"Proxying /generate directly to {API_URL}")
+        httpd.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
