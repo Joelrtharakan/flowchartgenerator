@@ -69,9 +69,9 @@ Terraform creates a 3-node Kubernetes cluster inside Docker (kind), then the app
 
 ```bash
 cd terraform-local && terraform init && terraform apply -auto-approve && cd ..
-docker build -f Dockerfile.api -t flowchart-api:local .
+docker build -f Dockerfile.api --build-arg REQUIREMENTS=requirements-lite.txt -t flowchart-api:lite .   # small image, no model
 docker build -f Dockerfile.frontend -t flowchart-frontend:local .
-kind load docker-image flowchart-api:local flowchart-frontend:local --name flowchart
+kind load docker-image flowchart-api:lite flowchart-frontend:local --name flowchart
 kubectl apply -k k8s/overlays/local
 kubectl -n flowchart get pods,svc,hpa      # frontend: http://localhost:8082
 # teardown

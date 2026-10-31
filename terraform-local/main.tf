@@ -19,7 +19,7 @@ variable "cluster_name" {
 
 variable "worker_nodes" {
   type    = number
-  default = 2
+  default = 1
 }
 
 resource "kind_cluster" "this" {
