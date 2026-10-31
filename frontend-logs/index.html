@@ -277,7 +277,7 @@
             <span>Live Telemetry</span>
             <div id="connection-dot" class="pulse-dot"></div>
         </div>
-        <div class="nav-item" onclick="window.open('http://20.219.50.73:8000/docs', '_blank')">
+        <div class="nav-item" onclick="window.open('http://20.219.147.18:8000/docs', '_blank')">
             <span>Interactive Docs</span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
         </div>
@@ -287,7 +287,7 @@
         <header>
             <div>
                 <h1>API Telemetry Stream</h1>
-                <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 4px;">Real-time monitoring from production gateway (20.219.50.73)</p>
+                <p style="color: var(--text-secondary); font-size: 0.875rem; margin-top: 4px;">Real-time monitoring from production gateway (20.219.147.18)</p>
             </div>
             <div class="toolbar">
                 <button onclick="clearLogs()">Clear Display</button>
@@ -326,7 +326,7 @@
     </main>
 
     <script>
-        const LOG_API = 'http://20.219.50.73:8000/logs/api';
+        const LOG_API = 'http://20.219.147.18:8000/logs/api';
         const streamContainer = document.getElementById('log-stream');
         const streamBtn = document.getElementById('stream-btn');
         const pulseDot = document.getElementById('connection-dot');

@@ -312,7 +312,7 @@ def _replace_arrow_label(match: re.Match) -> str:
 
 def repair_mermaid(raw: str) -> str:
     """Repair common Mermaid syntax errors and normalize formatting.
-    
+
     Fixes:
     - Invalid node syntax [/text/] → [text]
     - Whitespace and spacing issues
@@ -530,20 +530,20 @@ def validate(mermaid: str) -> Tuple[bool, str]:
 
 def save_splits(results: List[Dict[str, str]], output_dir: Path) -> None:
     """Split results into train/val/test sets and save as JSONL files.
-    
+
     Uses configured ratios (90% train, 5% val, 5% test) to stratify data.
     """
     random.shuffle(results)
     n = len(results)
     train_count = int(n * DEFAULT_CONFIG["train_ratio"])
     val_count = int(n * DEFAULT_CONFIG["val_ratio"])
-    
+
     splits = {
         "train": results[:train_count],
         "val": results[train_count : train_count + val_count],
         "test": results[train_count + val_count :],
     }
-    
+
     for split_name, data in splits.items():
         path = output_dir / f"data_{split_name}.jsonl"
         with path.open("w", encoding="utf-8") as handle:
@@ -648,7 +648,7 @@ def validate_dataset_file(path: Path) -> None:
 
 def clean_dataset_file(path: Path, overwrite: bool = False) -> None:
     """Clean and repair dataset entries, removing invalid items.
-    
+
     Applies repair_mermaid to fix common format issues before validation.
     Saves to .cleaned.jsonl unless overwrite=True.
     """

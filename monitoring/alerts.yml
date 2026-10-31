@@ -1,0 +1,28 @@
+groups:
+  - name: flowchart-api
+    rules:
+      - alert: ApiDown
+        expr: up{job="flowchart-api"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: "Flowchart API is down"
+          description: "Prometheus cannot scrape the API for over 1 minute."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{job="flowchart-api",status="5xx"}[5m]))
+            / clamp_min(sum(rate(http_requests_total{job="flowchart-api"}[5m])), 1e-9) > 0.05
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "More than 5% of API requests are failing"
+
+      - alert: SlowGeneration
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket{job="flowchart-api",handler="/generate"}[5m])) by (le)) > 60
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: "p95 /generate latency above 60s (CPU inference)"

@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: flowchart
+    folder: Flowchart Generator
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

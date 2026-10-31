@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flowchart-config
+  namespace: flowchart
+data:
+  MODEL_REVISION: "main"
+  SKIP_MODEL_LOAD: "0"          # set to "1" for a lightweight demo on minikube/kind
+  CORS_ORIGINS: "*"
+  API_URL: "http://api:8000/generate"

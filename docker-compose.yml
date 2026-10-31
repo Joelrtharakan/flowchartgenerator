@@ -1,0 +1,68 @@
+# Full stack: API + frontend + Prometheus + Grafana
+#   docker compose up -d --build
+# For a quick demo without the 7GB model: SKIP_MODEL_LOAD=1 docker compose up -d --build
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    image: flowchart-api:local
+    environment:
+      SKIP_MODEL_LOAD: "${SKIP_MODEL_LOAD:-0}"
+      MODEL_REVISION: "${MODEL_REVISION:-main}"
+      MODEL_DTYPE: "${MODEL_DTYPE:-float32}"
+      CURRENT_MODEL_FILE: /app/models/current_model.txt
+    volumes:
+      # put adapters (v1, v2, ...) and current_model.txt ("models/v1") here; empty = base model
+      - ./training/models:/app/models:ro
+      - api-logs:/app/logs
+      - hf-cache:/app/.cache
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: flowchart-frontend:local
+    environment:
+      API_URL: http://api:8000/generate
+    depends_on:
+      - api
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?required}  # ggignore - variable reference, not a secret
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  api-logs:
+  hf-cache:
+  prometheus-data:
+  grafana-data:
