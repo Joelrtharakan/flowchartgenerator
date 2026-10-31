@@ -1,5 +1,10 @@
 # Flowchart Generation System using Fine-Tuned Phi-3
 
+[![CI/CD](https://github.com/Joelrtharakan/flowchartgenerator/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Joelrtharakan/flowchartgenerator/actions/workflows/ci-cd.yml)
+![Terraform](https://img.shields.io/badge/IaC-Terraform%20%2B%20Ansible-7B42BC)
+![Containers](https://img.shields.io/badge/containers-Docker%20%2B%20Kubernetes-2496ED)
+![Monitoring](https://img.shields.io/badge/monitoring-Prometheus%20%2B%20Grafana-E6522C)
+
 ## Overview
 
 This project implements an end-to-end system for generating Mermaid flowcharts from natural language prompts using a fine-tuned large language model.
@@ -14,6 +19,27 @@ The system is built around the **Phi-3 Mini Instruct** model and enhanced using 
 * Deployment on Azure Virtual Machine using FastAPI
 * Real-time logging and monitoring
 * Dedicated frontend for generation and logging visualization
+
+### DevOps architecture
+
+```mermaid
+flowchart LR
+    Dev[Developer] -->|feature branch + PR| GH[GitHub]
+    GH --> CI[GitHub Actions]
+    CI -->|tests, scans| Q{Quality gates}
+    Q --> B[Build images]
+    B --> REG[(GHCR)]
+    REG --> STG[Staging]
+    STG -->|approval| PRD[Production: Ansible]
+    TF[Terraform] -->|provisions| VM[Azure VM]
+    PRD --> VM
+    VM --> API[FastAPI + Phi-3]
+    VM --> FE[Frontend]
+    API -->|/metrics| PR[Prometheus]
+    PR --> G[Grafana + alerts]
+```
+
+More detail: [DevOps guide](docs/DEVOPS.md) | [Report](docs/REPORT.md) | [Viva Q&A](docs/VIVA_QA.md) | [Presentation runbook](docs/PRESENTATION.md) | [Contributing](CONTRIBUTING.md)
 
 ---
 
