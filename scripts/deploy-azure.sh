@@ -12,6 +12,10 @@ KEY="${KEY:-$HOME/.ssh/flowchart_azure}"
 OWNER="${OWNER:-joelrtharakan}"
 TAG="${1:-latest}"
 
+for tool in ansible-playbook ansible-galaxy ssh; do
+  command -v "$tool" >/dev/null || { echo "ERROR: '$tool' not found (brew install ansible). Nothing on the VM was touched." >&2; exit 1; }
+done
+
 cd "$(dirname "$0")/../ansible"
 printf '[flowchart]\n%s ansible_user=%s ansible_ssh_private_key_file=%s\n' "$VM_HOST" "$VM_USER" "$KEY" > inventory.ini
 
