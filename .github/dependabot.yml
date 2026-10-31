@@ -1,14 +1,33 @@
 version: 2
 updates:
+  # CI action updates are low risk and verified by the pipeline itself: one grouped PR per week
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Training dependencies are not exercised by CI; only accept patch updates
   - package-ecosystem: pip
     directory: /training
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # Base image upgrades (e.g. Python 3.12 -> 3.15) are done deliberately
   - package-ecosystem: docker
     directory: /
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+
+  # azurerm 3.x -> 4/5 needs a planned migration
   - package-ecosystem: terraform
     directory: /terraform
     schedule: { interval: weekly }
+    ignore:
+      - dependency-name: "hashicorp/azurerm"
+        update-types: ["version-update:semver-major"]
