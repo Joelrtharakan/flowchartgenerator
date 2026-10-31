@@ -10,7 +10,7 @@ resources:
   - api-hpa.yaml
   - frontend-deployment.yaml
 images:
-  - name: ghcr.io/OWNER/flowchart-api
+  - name: ghcr.io/joelrtharakan/flowchart-api
     newTag: latest
-  - name: ghcr.io/OWNER/flowchart-frontend
+  - name: ghcr.io/joelrtharakan/flowchart-frontend
     newTag: latest

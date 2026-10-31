@@ -4,6 +4,8 @@ services:
     image: {{ registry }}/{{ image_owner }}/flowchart-api:{{ image_tag }}
     environment:
       CURRENT_MODEL_FILE: /app/models/current_model.txt
+      MODEL_DTYPE: {{ model_dtype }}          # bfloat16 so Phi-3 fits in 16 GB RAM
+      SKIP_MODEL_LOAD: "{{ skip_model_load }}"
     volumes:
       - {{ app_dir }}/models:/app/models:ro
       - api-logs:/app/logs

@@ -274,6 +274,9 @@ jobs:
     # The `production` environment can be configured with required reviewers (manual approval).
     if: github.event_name == 'push' && github.ref == 'refs/heads/master' && vars.DEPLOY_ENABLED == 'true'
     environment: production
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v4
 
@@ -296,7 +299,9 @@ jobs:
         run: |
           ansible-playbook playbook.yml \
             -e image_owner="${GITHUB_REPOSITORY_OWNER,,}" \
-            -e image_tag="${GITHUB_SHA}"
+            -e image_tag="${GITHUB_SHA}" \
+            -e ghcr_user="${GITHUB_ACTOR}" \
+            -e ghcr_token="${{ secrets.GITHUB_TOKEN }}"
 
       - name: Post-deploy health check
         run: curl -fsS --retry 10 --retry-delay 6 --retry-connrefused "http://${{ secrets.VM_HOST }}:8000/health"
