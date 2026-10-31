@@ -115,8 +115,22 @@ Images are pushed to `ghcr.io/<owner>/flowchart-api` and `flowchart-frontend`; s
 5. Open Grafana: request rate and latency move; stop the API container to trigger the `ApiDown` alert in Prometheus.
 6. Show `kubectl rollout` and `scale`, then `terraform plan` output.
 
+## Verified deployment (Azure, Central India)
+
+| Item | Result |
+|---|---|
+| Terraform (`terraform/`) | `apply` created 8 resources (resource group, VNet, subnet, NSG, public IP, NIC, VM) |
+| VM | Ubuntu 22.04, 4 vCPU / 15 GB, Docker installed by cloud-init |
+| Compose stack on the VM | API, frontend, Prometheus and Grafana running; Prometheus target `flowchart-api` is up; 3 alert rules loaded; Grafana dashboard provisioned |
+| End-to-end request | Frontend -> API -> Phi-3 -> valid Mermaid returned (about 1 minute on CPU) |
+| Kubernetes (kind on the VM) | `k8s/overlays/local` applied: 2 API + 2 frontend pods, services respond to `/health`; scaled API 2 -> 4; rolling update (revision 2) and `rollout undo` succeeded |
+| Local checks | 26 unit tests, ruff, bandit clean; `terraform validate` passes for both Terraform configs; Ansible syntax check passes |
+
+The HorizontalPodAutoscaler shows `<unknown>` on the demo cluster because it has no metrics-server.
+
 ## Known limitations
 
 - The model (Phi-3 + LoRA adapters) is not baked into the image or the repo; adapters are mounted from a volume/PVC.
 - CPU inference is slow; the `SlowGeneration` alert threshold (60 s) reflects that.
+- The fine-tuned LoRA adapter was lost with the previous VM; the deployment serves base Phi-3 with a guided prompt and output cleanup. Mount adapters to use the fine-tuned model.
 - Terraform state is local. For a team, add an `azurerm` remote backend.
