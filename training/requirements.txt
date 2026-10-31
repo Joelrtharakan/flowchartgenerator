@@ -11,7 +11,7 @@ peft>=0.10.0
 bitsandbytes>=0.43.0
 
 # PostgreSQL interaction
-psycopg2-binary>=2.9.9
+psycopg2-binary>=2.9.13
 
 # Environment loader
 python-dotenv
