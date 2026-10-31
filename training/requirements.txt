@@ -8,7 +8,7 @@ accelerate>=0.29.0
 
 # Parameter-Efficient Fine-Tuning & Quantization (QLoRA)
 peft>=0.10.0
-bitsandbytes>=0.43.0
+bitsandbytes>=0.50.2
 
 # PostgreSQL interaction
 psycopg2-binary>=2.9.9
