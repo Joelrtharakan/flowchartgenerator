@@ -3,7 +3,7 @@ torch>=2.2.0
 
 # Hugging Face ML Stack (Newer versions needed for Phi-3 models)
 transformers>=4.40.0
-datasets>=2.18.0
+datasets>=5.1.0
 accelerate>=0.29.0
 
 # Parameter-Efficient Fine-Tuning & Quantization (QLoRA)
