@@ -17,7 +17,7 @@ from tqdm import tqdm
 
 DEFAULT_CONFIG = {
     "ollama_url": "http://localhost:11434/api/generate",
-    "model": "qwen2.5-coder:3b",
+    "model": "qwen2.5-coder:7b",
     "output_dir": "data",
     "target": 500,
     "checkpoint_interval": 200,
@@ -310,6 +310,42 @@ def _replace_arrow_label(match: re.Match) -> str:
     return f"|{label}|" if label in {"Yes", "No"} else match.group(0)
 
 
+def enforce_inline_format(code: str) -> str:
+    import re
+    lines = code.split("\n")
+
+    node_defs = {}
+    node_pattern = re.compile(r"([A-Za-z0-9_]+)(\[.*?\]|\(\[.*?\]\)|\(.*?\)|\{.*?\})")
+
+    for line in lines:
+        for match in node_pattern.finditer(line):
+            node_defs[match.group(1)] = match.group(2)
+
+    filtered = []
+    used_nodes = set()
+
+    for line in lines:
+        if line.startswith("flowchart"):
+            continue
+
+        if "-->" in line:
+            def replacer(match):
+                node_id = match.group(1)
+
+                if node_id in node_defs and node_id not in used_nodes:
+                    used_nodes.add(node_id)
+                    return f"{node_id}{node_defs[node_id]}"
+                return node_id
+
+            new_line = re.sub(r"([A-Za-z0-9_]+)(\[.*?\]|\(\[.*?\]\)|\(.*?\)|\{.*?\})?", replacer, line)
+            filtered.append(new_line)
+
+    if lines and lines[0].startswith("flowchart"):
+        return lines[0].strip() + "\n" + "\n".join(filtered)
+
+    return "\n".join(filtered)
+
+
 def repair_mermaid(raw: str) -> str:
     """Repair common Mermaid syntax errors and normalize formatting.
 
@@ -341,7 +377,12 @@ def repair_mermaid(raw: str) -> str:
 
         lines.append(line)
 
-    return "\n".join(lines).strip()
+    mermaid = "\n".join(lines).strip()
+
+    # enforce inline formatting
+    mermaid = enforce_inline_format(mermaid)
+
+    return mermaid
 
 
 def build_prompt_pool() -> List[str]:
@@ -399,7 +440,8 @@ def save_checkpoint(data: List[Dict[str, str]], output_dir: Path) -> None:
     checkpoint_path = output_dir / CHECKPOINT_FILE_NAME
     with checkpoint_path.open("w", encoding="utf-8") as handle:
         for item in data:
-            handle.write(json.dumps(normalize_entry(item), ensure_ascii=False) + "\n")
+            target_item = normalize_entry(item)
+            handle.write(json.dumps({"messages": target_item["messages"]}, ensure_ascii=False) + "\n")
 
 
 def extract_node_ids(line: str) -> Set[str]:
@@ -710,8 +752,8 @@ def main() -> None:
     else:
         results = []
 
-    seen_mermaid = {item["mermaid"] for item in results}
-    seen_prompts: Set[str] = set()
+    seen_mermaid = {item.get("mermaid") or find_mermaid_in_messages(item.get("messages", [])) for item in results}
+    seen_prompts = {item.get("prompt") or find_prompt_in_messages(item.get("messages", [])) for item in results}
     generator = prompt_generator(prompt_pool, allow_reuse)
     _shutdown_requested = False
 
@@ -751,7 +793,7 @@ def main() -> None:
         if not raw:
             continue
 
-        mermaid = clean_mermaid(raw)
+        mermaid = repair_mermaid(raw)
         if mermaid in seen_mermaid:
             logger.debug("Duplicate Mermaid output skipped")
             continue
