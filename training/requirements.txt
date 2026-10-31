@@ -1,5 +1,5 @@
 # Deep Learning Core
-torch>=2.2.0
+torch>=2.15.0+cpu
 
 # Hugging Face ML Stack (Newer versions needed for Phi-3 models)
 transformers>=4.40.0
