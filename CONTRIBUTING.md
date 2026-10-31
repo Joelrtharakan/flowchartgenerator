@@ -48,3 +48,9 @@ pip install -r requirements-dev.txt
 ruff check . && bandit -q -r training/app.py frontend/server.py
 pytest --cov=app --cov=server
 ```
+
+## Dependency updates
+
+Dependabot opens weekly PRs. GitHub Actions updates are grouped into one PR and merged once CI is green.
+Major/minor bumps of training dependencies, the Python base image and the `azurerm` provider are ignored
+on purpose (see `.github/dependabot.yml`) and upgraded in a deliberate PR with testing.
