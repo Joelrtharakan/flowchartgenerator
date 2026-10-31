@@ -97,6 +97,10 @@ Grafana and Prometheus listen on `127.0.0.1` on the VM; reach them with
 
 ## GitHub setup for the pipeline
 
+Run once as the repo admin: `bash scripts/setup-github.sh` (secrets, deploy key, environments, branch protection).
+Deploy the published images to the VM with `bash scripts/deploy-azure.sh` (Ansible from your machine).
+Manual equivalents are in the table below.
+
 | Item | Where | Value |
 |---|---|---|
 | Environments `staging`, `production` | Settings -> Environments | Add required reviewers to `production` for manual approval |
