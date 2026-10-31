@@ -1,0 +1,5 @@
+# API without the ML stack: for demos/CI/Kubernetes with SKIP_MODEL_LOAD=1 (cannot serve /generate)
+fastapi
+uvicorn
+pydantic
+prometheus-fastapi-instrumentator>=7.0.0

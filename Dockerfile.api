@@ -2,10 +2,12 @@
 
 # ---- Stage 1: build wheels (keeps compilers/caches out of the final image) ----
 FROM python:3.12-slim AS builder
+# requirements-api.txt = full ML stack (default); requirements-lite.txt = no model, for demos
+ARG REQUIREMENTS=requirements-api.txt
 WORKDIR /build
-COPY training/requirements-api.txt .
+COPY training/requirements-*.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
- && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements-api.txt
+ && pip wheel --no-cache-dir --wheel-dir /wheels -r ${REQUIREMENTS}
 
 # ---- Stage 2: slim runtime ----
 FROM python:3.12-slim AS runtime

@@ -1,5 +1,5 @@
 # Laptop overlay for kind/minikube: tiny resources, model skipped, NodePort frontend.
-#   kind load docker-image flowchart-api:local flowchart-frontend:local --name flowchart
+#   kind load docker-image flowchart-api:lite flowchart-frontend:local --name flowchart
 #   kubectl apply -k k8s/overlays/local
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -8,7 +8,7 @@ resources:
 images:
   - name: ghcr.io/OWNER/flowchart-api
     newName: flowchart-api
-    newTag: local
+    newTag: lite
   - name: ghcr.io/OWNER/flowchart-frontend
     newName: flowchart-frontend
     newTag: local
