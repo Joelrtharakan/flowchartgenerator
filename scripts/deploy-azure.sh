@@ -15,6 +15,16 @@ TAG="${1:-latest}"
 cd "$(dirname "$0")/../ansible"
 printf '[flowchart]\n%s ansible_user=%s ansible_ssh_private_key_file=%s\n' "$VM_HOST" "$VM_USER" "$KEY" > inventory.ini
 
+# Pre-flight: make sure both images can be pulled BEFORE touching the running stack
+for img in flowchart-api flowchart-frontend; do
+  if ! ssh -i "$KEY" "$VM_USER@$VM_HOST" "${GHCR_TOKEN:+echo '$GHCR_TOKEN' | docker login ghcr.io -u '$OWNER' --password-stdin >/dev/null 2>&1;} docker pull ghcr.io/$OWNER/$img:$TAG >/dev/null 2>&1"; then
+    echo "ERROR: cannot pull ghcr.io/$OWNER/$img:$TAG from the VM." >&2
+    echo "Set the package to Public (GitHub -> Packages -> $img -> Package settings) or export GHCR_TOKEN (read:packages)." >&2
+    echo "The running stack was NOT touched." >&2
+    exit 1
+  fi
+done
+
 # The earlier hand-deployed stack uses the same ports; stop it first (volumes, including the model cache, are kept)
 ssh -i "$KEY" "$VM_USER@$VM_HOST" 'cd ~/flowchart 2>/dev/null && docker compose down || true'
 
