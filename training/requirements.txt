@@ -7,7 +7,7 @@ datasets>=2.18.0
 accelerate>=0.29.0
 
 # Parameter-Efficient Fine-Tuning & Quantization (QLoRA)
-peft>=0.10.0
+peft>=0.21.2
 bitsandbytes>=0.43.0
 
 # PostgreSQL interaction

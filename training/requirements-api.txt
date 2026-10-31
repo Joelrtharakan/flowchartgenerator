@@ -3,7 +3,7 @@
 torch>=2.2.0
 transformers>=4.40.0
 accelerate>=0.29.0
-peft>=0.10.0
+peft>=0.21.2
 fastapi
 uvicorn
 pydantic
