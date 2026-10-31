@@ -2,7 +2,7 @@ name: CI/CD
 
 on:
   push:
-    branches: [master, main]
+    branches: [master, main, "feature/**", "fix/**", "infra/**"]
   pull_request:
     branches: [master, main]
   workflow_dispatch:
