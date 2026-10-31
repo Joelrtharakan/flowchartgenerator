@@ -5,8 +5,7 @@ import json
 import os
 import re
 
-PORT = 8082
-PORT = int(os.getenv("PORT", PORT))
+PORT = int(os.getenv("PORT", "8082"))
 API_TIMEOUT = int(os.getenv("API_TIMEOUT", "300"))
 API_URL = os.getenv("API_URL", "http://20.219.147.18:8000/generate")
 
