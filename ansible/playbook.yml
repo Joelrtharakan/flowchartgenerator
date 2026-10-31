@@ -1,0 +1,107 @@
+---
+# Configure the VM and deploy the stack with Docker Compose.
+#   ansible-playbook playbook.yml -e grafana_password=... -e image_owner=<github-user>
+- name: Deploy Flowchart Generator
+  hosts: flowchart
+  become: true
+  vars:
+    app_dir: /opt/flowchart
+    image_owner: "joelrtharakan"
+    image_tag: latest
+    registry: ghcr.io
+    grafana_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') }}"
+    model_dtype: bfloat16
+    skip_model_load: "0"
+    # Optional: token with read:packages for private GHCR images (CI passes GITHUB_TOKEN)
+    ghcr_user: ""
+    ghcr_token: ""
+
+  tasks:
+    - name: Install base packages
+      ansible.builtin.apt:
+        name: [ca-certificates, curl, git, python3-pip, ufw]
+        state: present
+        update_cache: true
+
+    - name: Check whether Docker is installed
+      ansible.builtin.command: docker --version
+      register: docker_check
+      changed_when: false
+      failed_when: false
+
+    - name: Install Docker
+      ansible.builtin.shell: curl -fsSL https://get.docker.com | sh
+      args:
+        creates: /usr/bin/docker
+      when: docker_check.rc != 0
+
+    - name: Ensure Docker is running
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Allow SSH, API and frontend through the firewall
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop: ["22", "8000", "8082"]
+
+    - name: Enable firewall
+      community.general.ufw:
+        state: enabled
+
+    - name: Create app directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ app_dir }}"
+        - "{{ app_dir }}/monitoring/grafana/provisioning/datasources"
+        - "{{ app_dir }}/monitoring/grafana/provisioning/dashboards"
+        - "{{ app_dir }}/monitoring/grafana/dashboards"
+        - "{{ app_dir }}/models"
+
+    - name: Copy monitoring configuration
+      ansible.builtin.copy:
+        src: "../monitoring/"
+        dest: "{{ app_dir }}/monitoring/"
+        mode: "0644"
+
+    - name: Render docker-compose file
+      ansible.builtin.template:
+        src: docker-compose.prod.yml.j2
+        dest: "{{ app_dir }}/docker-compose.yml"
+        mode: "0644"
+
+    - name: Write environment file (secrets stay out of the compose file)
+      ansible.builtin.copy:
+        dest: "{{ app_dir }}/.env"
+        content: "GRAFANA_ADMIN_PASSWORD={{ grafana_password }}\n"
+        mode: "0600"
+      no_log: true
+
+    - name: Log in to GHCR (only needed for private images)
+      ansible.builtin.shell: echo "$GHCR_TOKEN" | docker login ghcr.io -u "{{ ghcr_user }}" --password-stdin
+      environment:
+        GHCR_TOKEN: "{{ ghcr_token }}"
+      when: ghcr_token | length > 0
+      changed_when: false
+      no_log: true
+
+    - name: Pull images and start the stack
+      ansible.builtin.command:
+        cmd: docker compose up -d --pull always
+        chdir: "{{ app_dir }}"
+      changed_when: true
+
+    - name: Wait for the API health check
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:8000/health"
+        status_code: 200
+      register: health
+      retries: 30
+      delay: 10
+      until: health.status == 200

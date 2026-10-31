@@ -61,3 +61,18 @@ htmlcov/
 # Common databases
 *.db
 *.sqlite3
+
+# Test artifacts
+tests/_logs/
+coverage.xml
+.terraform/
+*.tfstate*
+*.tfvars
+!terraform.tfvars.example
+ansible/inventory.ini
+tfplan
+
+# kind writes the cluster kubeconfig (with client keys) next to the Terraform files
+terraform-local/*-config
+*.kubeconfig
+kubeconfig*
