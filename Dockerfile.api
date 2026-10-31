@@ -18,6 +18,9 @@ ENV PYTHONUNBUFFERED=1 \
     CURRENT_MODEL_FILE=/app/current_model.txt \
     HF_HOME=/app/.cache/huggingface
 
+LABEL org.opencontainers.image.source="https://github.com/Joelrtharakan/flowchartgenerator" \
+      org.opencontainers.image.description="Flowchart generator inference API"
+
 RUN useradd --create-home --uid 10001 appuser
 WORKDIR /app
 

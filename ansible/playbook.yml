@@ -6,10 +6,15 @@
   become: true
   vars:
     app_dir: /opt/flowchart
-    image_owner: "OWNER"
+    image_owner: "joelrtharakan"
     image_tag: latest
     registry: ghcr.io
     grafana_password: "{{ lookup('env', 'GRAFANA_ADMIN_PASSWORD') }}"
+    model_dtype: bfloat16
+    skip_model_load: "0"
+    # Optional: token with read:packages for private GHCR images (CI passes GITHUB_TOKEN)
+    ghcr_user: ""
+    ghcr_token: ""
 
   tasks:
     - name: Install base packages
@@ -76,6 +81,14 @@
         dest: "{{ app_dir }}/.env"
         content: "GRAFANA_ADMIN_PASSWORD={{ grafana_password }}\n"
         mode: "0600"
+      no_log: true
+
+    - name: Log in to GHCR (only needed for private images)
+      ansible.builtin.shell: echo "$GHCR_TOKEN" | docker login ghcr.io -u "{{ ghcr_user }}" --password-stdin
+      environment:
+        GHCR_TOKEN: "{{ ghcr_token }}"
+      when: ghcr_token | length > 0
+      changed_when: false
       no_log: true
 
     - name: Pull images and start the stack

@@ -18,7 +18,7 @@ spec:
       securityContext: { runAsNonRoot: true, runAsUser: 10001 }
       containers:
         - name: frontend
-          image: ghcr.io/OWNER/flowchart-frontend:latest   # replaced by CI
+          image: ghcr.io/joelrtharakan/flowchart-frontend:latest   # replaced by CI
           ports:
             - containerPort: 8082
           envFrom:

@@ -28,7 +28,7 @@ spec:
         fsGroup: 10001
       containers:
         - name: api
-          image: ghcr.io/OWNER/flowchart-api:latest   # replaced by CI (kustomize edit set image)
+          image: ghcr.io/joelrtharakan/flowchart-api:latest   # replaced by CI (kustomize edit set image)
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000

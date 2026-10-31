@@ -6,10 +6,10 @@ kind: Kustomization
 resources:
   - ../../base
 images:
-  - name: ghcr.io/OWNER/flowchart-api
+  - name: ghcr.io/joelrtharakan/flowchart-api
     newName: flowchart-api
     newTag: lite
-  - name: ghcr.io/OWNER/flowchart-frontend
+  - name: ghcr.io/joelrtharakan/flowchart-frontend
     newName: flowchart-frontend
     newTag: local
 patches:
