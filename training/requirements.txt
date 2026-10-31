@@ -2,7 +2,7 @@
 torch>=2.2.0
 
 # Hugging Face ML Stack (Newer versions needed for Phi-3 models)
-transformers>=4.40.0
+transformers>=4.40.2
 datasets>=2.18.0
 accelerate>=0.29.0
 

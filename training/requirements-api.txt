@@ -1,7 +1,7 @@
 # Runtime dependencies for the CPU inference API (used by Dockerfile.api)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.2.0
-transformers>=4.40.0
+transformers>=4.40.2
 accelerate>=0.29.0
 peft>=0.10.0
 fastapi
